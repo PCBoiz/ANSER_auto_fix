@@ -1,0 +1,79 @@
+{
+  "name": "ANSER Auto — Tổng hợp thuế GTGT",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 9 1 * *" }] }
+      },
+      "id": "vat-trigger",
+      "name": "Ngày 1 mỗi tháng, 9h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/vat-summary?period=month",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Internal-Token", "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN" }]
+        },
+        "options": {}
+      },
+      "id": "vat-fetch",
+      "name": "Lấy tổng hợp VAT",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Thuế GTGT đầu ra (bán hàng) trừ đầu vào (mua hàng) trong tháng — số dương là ước tính\n// phải nộp thêm, số âm là được khấu trừ/kết chuyển. CHỈ tham khảo nhanh, không thay thế tờ\n// khai thuế thật (còn phụ thuộc hoá đơn đã nhận đủ hay chưa — xem workflow \"Nhắc NCC chưa\n// nhận hoá đơn\"). Luôn gửi kể cả 0đ — kế toán vẫn cần biết tháng này không phát sinh gì.\nconst d = $json;\nconst vnd = n => new Intl.NumberFormat('vi-VN').format(n || 0) + '₫';\nconst payableLabel = d.vat_payable >= 0 ? 'Ước tính phải nộp thêm' : 'Ước tính được khấu trừ/kết chuyển';\n\nconst html = `<h2>🧮 Tổng hợp thuế GTGT — ${d.period_label}</h2>`\n  + `<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse\">`\n  + `<tr><td>Doanh thu bán hàng</td><td align=\"right\">${vnd(d.revenue)}</td></tr>`\n  + `<tr><td>Thuế GTGT đầu ra</td><td align=\"right\">${vnd(d.vat_output)}</td></tr>`\n  + `<tr><td>Chi mua hàng</td><td align=\"right\">${vnd(d.spend)}</td></tr>`\n  + `<tr><td>Thuế GTGT đầu vào</td><td align=\"right\">${vnd(d.vat_input)}</td></tr>`\n  + `<tr><td><b>${payableLabel}</b></td><td align=\"right\"><b>${vnd(Math.abs(d.vat_payable))}</b></td></tr>`\n  + `</table>`\n  + `<p style=\"color:#888;font-size:12px\">${d.company_name} — ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>`;\n\nreturn { json: {\n  email_to: d.company_email || '',\n  email_subject: `🧮 Tổng hợp thuế GTGT ${d.period_label} — ${payableLabel.toLowerCase()} ${vnd(Math.abs(d.vat_payable))}`,\n  email_html: html\n} };"
+      },
+      "id": "vat-format",
+      "name": "Soạn báo cáo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.email_to }}", "operation": "isNotEmpty" }]
+        }
+      },
+      "id": "vat-if-email",
+      "name": "Có email nhận?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@anser.auto",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.email_subject }}",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "vat-email",
+      "name": "Gửi Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1060, 220]
+    }
+  ],
+  "connections": {
+    "Ngày 1 mỗi tháng, 9h": { "main": [[{ "node": "Lấy tổng hợp VAT", "type": "main", "index": 0 }]] },
+    "Lấy tổng hợp VAT": { "main": [[{ "node": "Soạn báo cáo", "type": "main", "index": 0 }]] },
+    "Soạn báo cáo": { "main": [[{ "node": "Có email nhận?", "type": "main", "index": 0 }]] },
+    "Có email nhận?": {
+      "main": [[{ "node": "Gửi Email", "type": "main", "index": 0 }], []]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

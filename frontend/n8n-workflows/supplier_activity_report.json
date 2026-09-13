@@ -1,0 +1,79 @@
+{
+  "name": "ANSER Auto — Nhà cung cấp mới / ngừng giao dịch",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 10 1 * *" }] }
+      },
+      "id": "sa-trigger",
+      "name": "Ngày 1 mỗi tháng, 10h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [180, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/supplier-activity?newDays=30&staleDays=60",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "X-Internal-Token", "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN" }]
+        },
+        "options": {}
+      },
+      "id": "sa-fetch",
+      "name": "Lấy biến động NCC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// NCC mới xuất hiện trong 30 ngày gần đây, và NCC cũ đã lâu (> 60 ngày) không có giao dịch\n// nào mới. NCC mới cần xác minh/đàm phán giá; NCC ngừng giao dịch có thể là dấu hiệu họ đóng\n// cửa hoặc gara đã âm thầm chuyển nguồn hàng mà không ai ghi nhận chính thức. Chỉ gửi khi có\n// ít nhất 1 trong 2 nhóm phát sinh — không làm phiền hộp thư nếu không có gì đáng chú ý.\nconst d = $json;\nconst news = d.new_suppliers || [];\nconst stales = d.stale_suppliers || [];\nif (news.length === 0 && stales.length === 0) return { json: { email_to: '' } };\n\nconst vnd = n => new Intl.NumberFormat('vi-VN').format(n || 0) + '₫';\nconst fmt = s => new Date(s).toLocaleDateString('vi-VN');\n\nconst newRows = news.map(s => `<tr><td>${s.partner_name}</td><td>${fmt(s.first_seen)}</td><td align=\"right\">${vnd(s.total_spent)}</td></tr>`).join('');\nconst staleRows = stales.map(s => `<tr><td>${s.partner_name}</td><td>${fmt(s.last_seen)}</td><td align=\"right\">${vnd(s.total_spent)}</td></tr>`).join('');\n\nlet html = `<h2>🔄 Biến động nhà cung cấp tháng này</h2>`;\nif (news.length) {\n  html += `<h3>🆕 ${news.length} NCC mới</h3>`\n    + `<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse\">`\n    + `<tr><th>Nhà cung cấp</th><th>Giao dịch đầu</th><th>Đã chi</th></tr>${newRows}</table>`;\n}\nif (stales.length) {\n  html += `<h3 style=\"margin-top:20px\">💤 ${stales.length} NCC lâu không giao dịch (>${d.stale_days} ngày)</h3>`\n    + `<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse\">`\n    + `<tr><th>Nhà cung cấp</th><th>Giao dịch gần nhất</th><th>Tổng đã chi</th></tr>${staleRows}</table>`;\n}\nhtml += `<p style=\"color:#888;font-size:12px\">${d.company_name} — ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>`;\n\nreturn { json: {\n  email_to: d.company_email || '',\n  email_subject: `🔄 ${news.length} NCC mới, ${stales.length} NCC lâu không giao dịch`,\n  email_html: html\n} };"
+      },
+      "id": "sa-format",
+      "name": "Soạn báo cáo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [620, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [{ "value1": "={{ $json.email_to }}", "operation": "isNotEmpty" }]
+        }
+      },
+      "id": "sa-if-email",
+      "name": "Có email nhận?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@anser.auto",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.email_subject }}",
+        "html": "={{ $json.email_html }}",
+        "options": {}
+      },
+      "id": "sa-email",
+      "name": "Gửi Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1060, 220]
+    }
+  ],
+  "connections": {
+    "Ngày 1 mỗi tháng, 10h": { "main": [[{ "node": "Lấy biến động NCC", "type": "main", "index": 0 }]] },
+    "Lấy biến động NCC": { "main": [[{ "node": "Soạn báo cáo", "type": "main", "index": 0 }]] },
+    "Soạn báo cáo": { "main": [[{ "node": "Có email nhận?", "type": "main", "index": 0 }]] },
+    "Có email nhận?": {
+      "main": [[{ "node": "Gửi Email", "type": "main", "index": 0 }], []]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

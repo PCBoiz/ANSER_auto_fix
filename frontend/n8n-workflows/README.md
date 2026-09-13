@@ -1,7 +1,9 @@
 # Workflow n8n — ANSER Auto
 
-7 workflow, import thủ công qua n8n UI (n8n không có API import dùng được ở đây — đúng cách
+17 workflow, import thủ công qua n8n UI (n8n không có API import dùng được ở đây — đúng cách
 ANSER Flask và ANSER v2 cũng làm).
+
+## Nhóm vận hành xưởng (7 workflow gốc)
 
 | File | Trigger | Gọi vào Next.js | Gửi cho ai |
 |---|---|---|---|
@@ -12,6 +14,33 @@ ANSER Flask và ANSER v2 cũng làm).
 | `awaiting_acceptance_reminder.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/awaiting-acceptance?days=2` | **Khách hàng** (1 thư/lệnh, xe chờ nghiệm thu quá hạn) + bản tổng hợp cho gara |
 | `unpaid_invoice_report.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/unpaid-invoices?days=7` | Chỉ **email doanh nghiệp** (quản lý/kế toán) — không gửi khách |
 | `revenue_report.json` | Lịch, 20h mỗi ngày | `GET /api/n8n/internal/revenue?period=day` | Email doanh nghiệp |
+
+## Nhóm Kế toán — đọc `sales_ledger`/`purchase_ledger` (sổ kế toán, không gắn lệnh sửa xe)
+
+| File | Trigger | Gọi vào Next.js | Gửi cho ai |
+|---|---|---|---|
+| `purchase_pending_invoices_report.json` | Lịch, mỗi tuần 8h | `GET /api/n8n/internal/purchase-pending-invoices?days=14` | Email doanh nghiệp (Kế toán) |
+| `sales_by_partner_report.json` | Lịch, ngày 1 mỗi tháng 9h | `GET /api/n8n/internal/sales-by-partner?period=month&limit=10` | Email doanh nghiệp (Kế toán → chủ xưởng đọc) |
+| `sales_invoice_gap_report.json` | Lịch, mỗi tuần 9h | `GET /api/n8n/internal/sales-invoice-gap` | Email doanh nghiệp (Kế toán) |
+| `purchase_payables_report.json` | Lịch, mỗi tuần 9h30 | `GET /api/n8n/internal/purchase-payables` | Email doanh nghiệp (Kế toán) |
+| `vat_summary_report.json` | Lịch, ngày 1 mỗi tháng 9h | `GET /api/n8n/internal/vat-summary?period=month` | Email doanh nghiệp (Kế toán) |
+| `ledger_anomalies_report.json` | Lịch, mỗi ngày 21h | `GET /api/n8n/internal/ledger-anomalies?days=1&multiplier=5` | Email doanh nghiệp (Kế toán) |
+
+## Nhóm Quản lý xưởng — đọc `parts`/`part_transactions`/`purchase_ledger`
+
+| File | Trigger | Gọi vào Next.js | Gửi cho ai |
+|---|---|---|---|
+| `parts_missing_price_report.json` | Lịch, mỗi tuần 10h | `GET /api/n8n/internal/parts-missing-price?limit=20` | Email doanh nghiệp (Quản lý) |
+| `parts_missing_threshold_report.json` | Lịch, mỗi tuần 10h30 | `GET /api/n8n/internal/parts-missing-threshold?limit=20` | Email doanh nghiệp (Quản lý) |
+| `supplier_activity_report.json` | Lịch, ngày 1 mỗi tháng 10h | `GET /api/n8n/internal/supplier-activity?newDays=30&staleDays=60` | Email doanh nghiệp (Quản lý) |
+| `top_exported_parts_report.json` | Lịch, mỗi tuần 18h | `GET /api/n8n/internal/top-exported-parts?days=30&limit=10` | Email doanh nghiệp (Quản lý) |
+
+Cả 10 workflow nhóm Kế toán/Quản lý dùng chung 1 địa chỉ nhận (`company_settings.email`, cột
+`toEmail` trong node Gửi Email) — app hiện chưa có email riêng theo vai trò, chỉ có 1 email
+doanh nghiệp chung. Việc tách "gửi cho ai" ở 2 bảng trên là **nội dung** báo cáo phục vụ đúng
+vai trò đó, không phải định tuyến email kỹ thuật khác nhau. 10 workflow này KHÔNG có dòng
+tương ứng trong bảng `automation_rules`/trang "Tự động hoá" — bật/tắt/sửa lịch làm trực tiếp
+trong n8n UI, giống `unpaid_invoice_report.json` và `awaiting_acceptance_reminder.json`.
 
 3 workflow nhắc khách (`maintenance_reminder`, `appointment_reminder`,
 `awaiting_acceptance_reminder`) đều có **nhánh thứ hai gửi bản tổng hợp cho gara**, trong đó
