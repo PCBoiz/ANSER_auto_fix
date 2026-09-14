@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { branches, parts, partTransactions, serviceOrders } from "@/server/db/schema";
 import { DEFAULT_LOW_STOCK_THRESHOLD } from "@/server/domain";
@@ -251,74 +251,4 @@ export async function listLowStockParts(options?: {
     threshold: row.minStock ?? fallback,
     location: row.location,
   }));
-}
-
-// --- Dùng cho workflow n8n (Quản lý xưởng) ---
-
-// Phụ tùng chưa có giá bán (giá = 0) — thường là lô mới nhập/import hàng loạt chưa kịp định
-// giá; báo giá 0đ cho khách khi lập lệnh sửa chữa là lỗi nghiêm trọng, không phải cosmetic.
-export async function listPartsMissingPrice(options?: { branchId?: string; limit?: number }) {
-  const conditions = [eq(parts.price, 0)];
-  if (options?.branchId) conditions.push(eq(parts.branchId, options.branchId));
-
-  const [totals] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(parts)
-    .where(and(...conditions));
-
-  const sample = await db
-    .select({ code: parts.code, name: parts.name, category: parts.category, stock: parts.stock })
-    .from(parts)
-    .where(and(...conditions))
-    .orderBy(asc(parts.code))
-    .limit(options?.limit ?? 20);
-
-  return { count: totals?.count ?? 0, sample };
-}
-
-// Phụ tùng chưa đặt ngưỡng tồn kho riêng (`minStock` null) — `listLowStockParts()` vẫn bắt
-// được nhờ ngưỡng chung mặc định, nhưng ngưỡng chung không phân biệt được lọc dầu (tiêu thụ
-// nhanh) với hộp số (tiêu thụ hiếm) — càng nhiều mã thiếu ngưỡng riêng, cảnh báo tồn thấp
-// càng kém chính xác.
-export async function listPartsMissingThreshold(options?: { branchId?: string; limit?: number }) {
-  const conditions = [isNull(parts.minStock)];
-  if (options?.branchId) conditions.push(eq(parts.branchId, options.branchId));
-
-  const [totals] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(parts)
-    .where(and(...conditions));
-
-  const sample = await db
-    .select({ code: parts.code, name: parts.name, category: parts.category, stock: parts.stock })
-    .from(parts)
-    .where(and(...conditions))
-    .orderBy(asc(parts.stock))
-    .limit(options?.limit ?? 20);
-
-  return { count: totals?.count ?? 0, sample };
-}
-
-// Phụ tùng xuất kho nhiều nhất trong `days` gần đây — hỗ trợ quyết định nhập hàng gì nhiều,
-// không phải suy đoán cảm tính từ trí nhớ thủ kho.
-export async function listTopExportedParts(options: { days: number; limit: number; branchId?: string }) {
-  const cutoff = new Date(Date.now() - options.days * 24 * 60 * 60 * 1000);
-  const conditions = [eq(partTransactions.type, "export"), gte(partTransactions.createdAt, cutoff)];
-  if (options.branchId) conditions.push(eq(parts.branchId, options.branchId));
-
-  return db
-    .select({
-      code: parts.code,
-      name: parts.name,
-      unit: parts.unit,
-      category: parts.category,
-      totalQuantity: sql<number>`sum(${partTransactions.quantity})::int`,
-      transactionCount: sql<number>`count(*)::int`,
-    })
-    .from(partTransactions)
-    .innerJoin(parts, eq(partTransactions.partId, parts.id))
-    .where(and(...conditions))
-    .groupBy(parts.id, parts.code, parts.name, parts.unit, parts.category)
-    .orderBy(desc(sql`sum(${partTransactions.quantity})`))
-    .limit(options.limit);
 }
