@@ -29,7 +29,7 @@ frontend/
 ├── docker-compose.yml            n8n (:5681) + MailHog (:8027)
 ├── drizzle.config.ts
 ├── next.config.ts / postcss.config.mjs / eslint.config.mjs / tsconfig.json
-├── n8n-workflows/                5 workflow JSON + README hướng dẫn import
+├── n8n-workflows/                9 workflow JSON + README hướng dẫn import
 └── src/
     ├── instrumentation.ts        chạy 1 lần lúc server khởi động → seed idempotent
     ├── proxy.ts                  chặn /dashboard (KHÔNG phải middleware.ts — xem mục 3)
@@ -64,7 +64,7 @@ frontend/
         ├── n8n.ts                webhook fire-and-forget (không throw)
         ├── n8nApi.ts             n8n Public API (có throw)
         ├── db/
-        │   ├── schema.ts         17 bảng + 2 sequence mã chứng từ
+        │   ├── schema.ts         20 bảng + 2 sequence mã chứng từ + 41 index
         │   ├── client.ts         singleton `db` khởi tạo lười
         │   └── migrations/0000_*.sql … 0003_*.sql
         └── store/
@@ -274,7 +274,7 @@ mất lỗi gốc. (ANSER v2 để mỗi route tự viết, và không có wrapp
 
 ## 8. Tự động hoá qua n8n
 
-5 workflow trong `frontend/n8n-workflows/` (import thủ công qua n8n UI — xem README trong đó):
+9 workflow trong `frontend/n8n-workflows/` (import thủ công qua n8n UI — xem README trong đó; hai bản tin gộp thêm ngày 17/09/2026, xem mục 11.3):
 cảnh báo phụ tùng sắp hết, nhắc bảo dưỡng định kỳ, nhắc lịch hẹn, báo tiến độ sửa chữa, báo
 cáo doanh thu.
 
@@ -436,15 +436,68 @@ không lách được.
 
 ## 10. Việc cần làm tiếp
 
+Mười mục của bảng cũ (xoá tài khoản, xác nhận n8n chạy đúng giờ, ngưỡng không được workflow
+đọc, zod, rate-limit, index, gộp truy vấn Tổng quan, in hoá đơn, trang Chi nhánh, tìm kiếm +
+chuông) đều đã làm trong đợt 17/09/2026 — xem mục 11. Còn lại:
+
 | Việc | Ghi chú |
 |---|---|
-| Xoá tài khoản đăng nhập | Trang **Tài khoản** (`/dashboard/accounts`) sửa role + liên kết nhân sự được, nhưng chưa có nút xoá — `users.ts` có sẵn `deleteUser()` ở tầng store, chỉ chưa có route/nút gọi tới. |
-| Xác nhận workflow n8n tự chạy đúng giờ | Cả 5 workflow đã import + Active thật trong n8n (19/08/2026), test tay từng bước (webhook, endpoint nội bộ) đều đúng — nhưng chưa có lần nào workflow tự nổ theo lịch (6h/ngày/giờ) và gửi email thật qua MailHog mà không có ai kích hoạt tay để xác nhận. |
-| Ngưỡng quy tắc chưa được workflow đọc | Trang Tự động hoá sửa được `threshold*` trong DB, nhưng workflow truyền tham số cứng trong URL. Cần cho endpoint `/api/n8n/internal/*` tự đọc rule thay vì nhận query param. |
-| Validate input bằng `zod` | Hiện đang validate thủ công (`if (!x)`) ở từng route. |
-| Rate-limit `/api/auth/login` | Chưa có — dễ brute-force mật khẩu. |
-| Index DB | Chưa có index nào ngoài PK/unique. Cần cho `service_orders.status`, `service_orders.vehicleId`, `part_transactions.partId`, `invoices.issuedAt`. |
-| Gộp truy vấn trang Tổng quan | `getOverviewSummary()` chạy 8 truy vấn tuần tự qua WebSocket tới Neon — đo được ~3.4s ở lần tải đầu từ Việt Nam. |
-| In hoá đơn | Chưa có bản in/PDF cho khách. |
-| Trang quản lý Chi nhánh | API `/api/branches` đã có CRUD đầy đủ, nhưng không có trang `/dashboard/branches` — sửa/thêm chi nhánh hiện phải gọi API tay. |
-| Ô tìm kiếm + chuông thông báo ở Topbar | Chỉ là UI trang trí, chưa gắn logic (không tìm được gì, chuông không có thông báo thật). |
+| Dọn dữ liệu thật trước go-live | Là việc của người vận hành, không phải code: chạy `npm run data:clean-demo --apply`, đổi email + mật khẩu 3 tài khoản `@anser.auto`, điền thông tin doanh nghiệp, đặt tên có dấu cho "Xuong son go han", đặt ngưỡng tồn 0 cho vật tư đặt theo xe. Trang **Kiểm tra vận hành** liệt kê đúng những việc này và tự hết khi xong. |
+| 781 phụ tùng chưa có giá bán | Công cụ đã có (Nhập giá hàng loạt), số liệu thì chưa. Đuôi "G3.000" trong tên là **giá nhập**, không phải giá bán (đã đo: trung vị G/giá vốn = 1,00) — đừng điền từ đó. `npm run data:name-prices` đề xuất điền giá vốn cho 105 mã còn trống và gỡ đuôi giá khỏi 600 tên trước khi in hoá đơn. |
+| zod cho 24 route còn lại | Khách hàng, xe, dịch vụ, nhân sự, lịch hẹn, hoá đơn, chấm công vẫn validate thủ công. Mẫu và helper đã có (`validation.ts`); chú ý bẫy `.optional()` bọc ngoài cho lược đồ PATCH. |
+| Bảo hiểm chi trả một phần | Hoá đơn có `insuranceAmount` nhưng sổ bán hàng (nguồn thật: phần lớn khách là công ty bảo hiểm) không nối được với lệnh sửa chữa — dữ liệu gốc không có biển số. Khi gara bắt đầu lập lệnh trong app, cân nhắc thêm `salesLedger.invoiceId` để đối chiếu. |
+| Cột "tiền thuế được giảm" trong sổ | 213/232 chứng từ bán có tổng thấp hơn tiền hàng 0,6%/0,2% theo phương pháp trực tiếp. Hiện chỉ giải thích trong form; nếu cần khai thuế từ app thì phải có cột riêng thay vì suy ngược. |
+| Rate-limit cho các endpoint ghi khác | Mới có ở `/api/auth/login`. Import Excel (5 MB, parse ở server) là ứng viên tiếp theo. |
+| Xác nhận n8n tự chạy theo lịch thật | Cơ chế đã có (nhịp tim + nguồn chạy), nhưng tới lúc viết, Docker trên máy dev đang tắt nên chưa có lần nào ghi nhận nguồn `schedule`. Cần bật n8n, import lại 9 workflow, đợi qua một mốc giờ. |
+| Test tự động | Chưa có bộ test nào. Các phép kiểm tra trong đợt này đều chạy tay (curl, script Node, Chrome DevTools). Ứng viên đầu tiên: `vndToWords` (21 ca đã liệt kê trong commit bd66fc2), `belowThresholdSql`, `planPartsImport`. |
+
+## 11. Đợt rà soát 17/09/2026 — những gì đã đổi và vì sao
+
+Đọc mục này khi thấy code không giống mô tả ở các mục trên. Mỗi dòng là một quyết định, lý do
+nằm ở chú thích ngay trong file được nhắc tới.
+
+### 11.1 Bảo mật
+
+| Đã đổi | Vì sao | Ở đâu |
+|---|---|---|
+| `POST /api/auth/register` chỉ mở khi DB chưa có tài khoản, hoặc `ALLOW_PUBLIC_REGISTER=true` | Trước đây mở hoàn toàn: ai cũng tạo được tài khoản `staff`, mà 44/51 route chỉ cần `requireUser()`. Deploy là mất sạch dữ liệu. | `api/auth/register/route.ts` |
+| Bỏ `seedDemoUser()`, thay bằng `seedBootstrapAdmin()` đọc từ env | Bản cũ tạo admin `demo1234` ở mọi lần khởi động và tự nâng lại quyền — cửa hậu không đóng được. | `store/users.ts` |
+| Gỡ 3 cặp email/mật khẩu khỏi `login/page.tsx` | File client: mật khẩu đi vào bundle gửi cho mọi trình duyệt. Nay đọc `NEXT_PUBLIC_DEV_QUICK_ACCOUNTS`, chỉ ngoài production. | `login/page.tsx` |
+| `users.mustChangePassword` + chặn ở `requireUser()` + cờ `mcp` trong JWT cho `proxy.ts` | Mật khẩu tạm đi qua điện thoại/tin nhắn. Chặn ở API chứ không chỉ UI; nhét cờ vào token để proxy không phải hỏi DB mỗi request. | `session.ts`, `auth.ts`, `proxy.ts`, `/doi-mat-khau` |
+| Rate-limit đăng nhập bằng bảng `login_attempts` | Đếm trong RAM sai khi nhiều instance / serverless. 5 lần/email, 20 lần/IP, 15 phút. Kiểm tra TRƯỚC khi chạm bcrypt. | `loginThrottle.ts` |
+| zod + `parseBody()` | `Number(x) \|\| 0` biến chữ thành 0đ, `.trim()` trên số là 500, không route nào chặn số âm. | `validation.ts` |
+
+### 11.2 Dữ liệu và sổ sách
+
+| Đã đổi | Vì sao | Ở đâu |
+|---|---|---|
+| 41 index | DB thật không có index nào ngoài PK/unique. | migration 0006 |
+| `formatDate` có `timeZone` | Chạy phía server trên máy UTC thì mốc 00:00–07:00 giờ VN lùi một ngày. **Không** ảnh hưởng chứng từ sổ (lưu 00:00Z) — đã đo cả 12 tháng. | `lib/format.ts` |
+| Font Be Vietnam Pro + JetBrains Mono | Geist không có subset `vietnamese`; "ă", "ễ" rơi về font hệ thống ngay giữa một từ. | `app/layout.tsx` |
+| Không ép `trước thuế + VAT = tổng` trong sổ | 213/232 chứng từ bán không thoả: gara nộp thuế GTGT theo phương pháp trực tiếp, VAT = 0, tổng thấp hơn đúng 0,6%/0,2%. Dữ liệu gốc đúng. | `ledgerSchemas.ts` |
+| Lược đồ PATCH suy từ tầng gốc không `.default()` | zod 4: `.partial()` KHÔNG bỏ default — PATCH chỉ sửa tên sẽ đặt tiền về 0. Đã chạy thử. | `ledgerSchemas.ts` |
+| `optionalUuid.optional()` trong PATCH | Helper biến "không gửi" thành `null`; thiếu lớp `.optional()` ngoài là gỡ liên kết nhân sự mỗi lần đặt lại mật khẩu. Đã chạy thử. | `validation.ts` (ghi chú BẪY), `api/users/[id]` |
+| Tồn đầu kỳ khi import Excel đi qua phiếu nhập | Quy tắc xuyên suốt: mọi biến động tồn có lịch sử. Script cũ ghi thẳng, nên 788 phụ tùng chỉ có 1 phiếu kho. | `partsImport.ts` |
+| Đuôi "G3.000" trong tên phụ tùng là giá nhập | 495 mã có cả hai: tỷ lệ G/giá vốn trung vị 1,00. Giả thuyết "G là giá bán" sai. | `scripts/extract-name-prices.mjs` |
+
+### 11.3 Tự động hoá
+
+| Đã đổi | Vì sao | Ở đâu |
+|---|---|---|
+| Endpoint `/internal/*` đọc ngưỡng từ DB; URL chỉ có tác dụng kèm `override=1` | Workflow truyền cứng `?days=7&km=500`; sửa trên app vô hiệu. Workflow cũ tự theo ngưỡng mới, không phải import lại. | `automation/rules.ts` |
+| Quy tắc tắt → endpoint trả `{ skipped, count: 0 }` | Công tắc trong app trước đây chỉ là cờ DB; workflow n8n vẫn gửi. Đã đối chiếu node Code của từng workflow để chắc chúng dừng gửi mà không nổ. | `automation/rules.ts` |
+| `last_run_at/status/summary/source` ghi bởi chính endpoint + nhịp tim cuối workflow | Trả lời "lịch có tự nổ không" từ trong app. Header `X-Anser-Trigger` dùng `$execution.mode` để phân biệt lịch với bấm tay; nguồn `unknown` (curl) **không** được ghi. | `automation/rules.ts`, `/internal/heartbeat` |
+| `belowThresholdSql()`: ngưỡng 0 = không cảnh báo | Điều kiện cũ `stock <= coalesce(min_stock, 5)` cho `0 <= 0` là đúng — đặt ngưỡng 0 vẫn kêu. Mô phỏng trên DB thật: 588 → 1 dòng. | `store/parts.ts` |
+| PATCH quy tắc luôn ghi DB, đồng bộ n8n là phụ | Bản cũ gọi n8n trước, n8n lỗi thì không ghi — Docker tắt là không tắt được cảnh báo từ app. Chỉ quản lý được sửa. | `api/automation/rules/[id]` |
+| Hai bản tin gộp `morning_brief`, `accounting_digest`, nội dung dựng trong app | Thay bộ 10 workflow đã revert (10 endpoint gần trùng, 4–5 email/ngày). Nội dung email là nghiệp vụ → nằm trong git, có escape HTML. | `automation/digests.ts` |
+| Bộ lập lịch nội bộ + bảng `notifications` | Docker tắt = không cảnh báo nào tới ai. Chuông trong app chỉ hỏng khi chính app hỏng. Chống trùng bằng unique `dedupe_key`. | `automation/cron.ts`, `/api/cron/automation`, `vercel.json` |
+| Quy tắc không có dòng cấu hình coi là BẬT | DB thật chỉ có 5/7 loại; coi "không có" là "tắt" làm workflow doanh thu im bặt. | `automation/rules.ts` |
+
+### 11.4 Cách đã kiểm tra
+
+Không có test tự động. Mỗi thay đổi được thử theo một trong các cách sau, ghi trong commit tương
+ứng: gọi API bằng curl với payload đúng hình dạng UI gửi; script Node chạy thẳng hàm (ví dụ 21
+ca `vndToWords`, lược đồ zod với `--experimental-strip-types`); mô phỏng SQL trên DB thật mà
+không ghi (ngưỡng tồn, bộ lọc ngày 12 tháng); và Chrome DevTools MCP mở trang thật để bấm, chụp,
+đọc console và chạy Lighthouse (bắt được 4 lỗi giao diện mà curl không thấy). Đo hiệu năng
+trước/sau trên cùng DB: Tổng quan ~8s → ~0,34s.
