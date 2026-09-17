@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { badRequest, forbidden, handle, notFound, unauthorized } from "@/server/api";
 import { applyPartsImport, planPartsImport } from "@/server/partsImport";
+import { checkRateLimit, RATE_LIMITS } from "@/server/rateLimit";
 import { requireManager, requireUser } from "@/server/session";
 import { getBranchById } from "@/server/store/branches";
 
@@ -28,10 +29,14 @@ const ALLOWED_EXTENSIONS = [".xlsx", ".csv"];
  */
 export async function POST(request: Request) {
   return handle(async () => {
-    if (!(await requireUser())) return unauthorized();
+    const user = await requireUser();
+    if (!user) return unauthorized();
     if (!(await requireManager())) {
       return forbidden("Chỉ quản lý trở lên mới nhập được danh mục phụ tùng.");
     }
+    // Kiểm tra hạn mức TRƯỚC khi đọc form-data: đọc 5 MB vào RAM rồi mới từ chối là vô ích.
+    const limited = checkRateLimit(RATE_LIMITS.partsImport, user.id);
+    if (limited) return limited;
 
     const form = await request.formData().catch(() => null);
     if (!form) return badRequest("Cần gửi file qua form-data.");

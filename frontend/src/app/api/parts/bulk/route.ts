@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { forbidden, handle, unauthorized } from "@/server/api";
+import { checkRateLimit, RATE_LIMITS } from "@/server/rateLimit";
 import { requireManager, requireUser } from "@/server/session";
 import { optionalNonNegativeInt, parseBody, uuidField, vndAmount } from "@/server/validation";
 import { bulkUpdateParts } from "@/server/store/parts";
@@ -36,10 +37,13 @@ const bulkSchema = z.object({
  */
 export async function PATCH(request: Request) {
   return handle(async () => {
-    if (!(await requireUser())) return unauthorized();
+    const user = await requireUser();
+    if (!user) return unauthorized();
     if (!(await requireManager())) {
       return forbidden("Chỉ quản lý trở lên mới sửa được giá bán hàng loạt.");
     }
+    const limited = checkRateLimit(RATE_LIMITS.partsBulk, user.id);
+    if (limited) return limited;
 
     const parsed = await parseBody(request, bulkSchema);
     if (!parsed.ok) return parsed.response;
