@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { users } from "@/server/db/schema";
 
@@ -24,6 +24,14 @@ export async function listUsers() {
   return db.select().from(users).orderBy(asc(users.firstName));
 }
 
+// Đếm tài khoản — `POST /api/auth/register` dùng để biết đây có phải lần cài đặt đầu tiên
+// (DB chưa có ai) hay không. Đếm bằng SQL thay vì `listUsers().length`: hàm này chạy ở
+// MỌI lần gọi đăng ký, kéo cả bảng về chỉ để đếm là lãng phí không có lý do.
+export async function countUsers() {
+  const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(users);
+  return row?.n ?? 0;
+}
+
 export async function createUser(input: {
   firstName: string;
   lastName: string;
@@ -32,6 +40,7 @@ export async function createUser(input: {
   passwordHash: string;
   role?: Role;
   employeeId?: string;
+  mustChangePassword?: boolean;
 }): Promise<User> {
   const rows = await db
     .insert(users)
@@ -43,6 +52,7 @@ export async function createUser(input: {
       passwordHash: input.passwordHash,
       role: input.role ?? "staff",
       employeeId: input.employeeId,
+      mustChangePassword: input.mustChangePassword ?? false,
     })
     .returning();
   return rows[0];
@@ -57,6 +67,7 @@ export async function updateUser(
     passwordHash: string;
     role: Role;
     employeeId: string | null;
+    mustChangePassword: boolean;
   }>,
 ): Promise<User | undefined> {
   const rows = await db.update(users).set(patch).where(eq(users.id, id)).returning();
@@ -80,27 +91,54 @@ export function toPublicUser(user: User) {
   return publicUser;
 }
 
-// Tài khoản demo hiện sẵn dưới dạng nút điền nhanh ở trang đăng nhập.
-export const DEMO_ACCOUNT = {
-  firstName: "Demo",
-  lastName: "Garage",
-  email: "demo@anser.auto",
-  password: "demo1234",
-};
+// Khởi tạo tài khoản quản trị đầu tiên.
+//
+// THAY CHO `seedDemoUser()` CŨ (17/09/2026). Bản cũ tạo `demo@anser.auto` / `demo1234`
+// với role `admin` ở MỌI lần server khởi động, và còn tự nâng lại lên `admin` nếu ai đó
+// hạ cấp nó xuống. Mật khẩu đó nằm công khai trong README và trong trang đăng nhập, nên
+// trên bản deploy thật nó là một cửa hậu quản trị vĩnh viễn mà không cách nào đóng từ
+// trong giao diện — hạ quyền cũng vô ích vì lần khởi động sau nó lên lại.
+//
+// Nay: chỉ tạo khi được khai báo TƯỜNG MINH bằng env, và chỉ khi DB chưa có tài khoản
+// quản trị nào. Không có env thì không tạo gì cả — hệ thống trống sẽ mở đúng một cửa
+// đăng ký đầu tiên (xem `POST /api/auth/register`), đó là cách bootstrap an toàn hơn
+// một mật khẩu mặc định ai cũng biết.
+export async function seedBootstrapAdmin() {
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 
-export async function seedDemoUser() {
-  const existing = await findUserByEmail(DEMO_ACCOUNT.email);
-  if (existing) {
-    // Tài khoản demo phải luôn là admin — không thì không ai vào được trang Nhân sự
-    // sau khi nâng cấp từ bản chưa có phân quyền.
-    if (existing.role !== "admin") await updateUser(existing.id, { role: "admin" });
+  if (!email || !password) return;
+
+  if (password.length < 8) {
+    console.warn(
+      "[seed] Bỏ qua BOOTSTRAP_ADMIN: mật khẩu ngắn hơn 8 ký tự. Đặt một chuỗi dài hơn rồi khởi động lại.",
+    );
     return;
   }
+
+  const existing = await findUserByEmail(email);
+  if (existing) {
+    // KHÔNG tự nâng quyền tài khoản đã tồn tại. Hành vi "tự backfill lên admin" của bản
+    // cũ nghĩa là ai giữ được env cũ thì vĩnh viễn giành lại được quyền quản trị.
+    return;
+  }
+
+  if (await countAdmins() > 0) {
+    console.warn(
+      `[seed] Bỏ qua BOOTSTRAP_ADMIN (${email}): hệ thống đã có quản trị viên. Cấp tài khoản qua trang Tài khoản.`,
+    );
+    return;
+  }
+
   await createUser({
-    firstName: DEMO_ACCOUNT.firstName,
-    lastName: DEMO_ACCOUNT.lastName,
-    email: DEMO_ACCOUNT.email,
-    passwordHash: bcrypt.hashSync(DEMO_ACCOUNT.password, 10),
+    firstName: "Quản trị",
+    lastName: "Hệ thống",
+    email,
+    passwordHash: bcrypt.hashSync(password, 10),
     role: "admin",
+    // Mật khẩu này nằm trong file env, thường được chép qua chat/terminal — ép đổi ngay
+    // ở lần đăng nhập đầu để nó không trở thành mật khẩu vĩnh viễn.
+    mustChangePassword: true,
   });
+  console.log(`[seed] Đã tạo tài khoản quản trị đầu tiên: ${email} (bắt buộc đổi mật khẩu khi đăng nhập).`);
 }

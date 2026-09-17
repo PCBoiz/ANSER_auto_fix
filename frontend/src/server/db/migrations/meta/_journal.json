@@ -43,6 +43,13 @@
       "when": 1788538967278,
       "tag": "0005_long_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789655526214,
+      "tag": "0006_hardening_indexes_login_attempts",
+      "breakpoints": true
     }
   ]
 }

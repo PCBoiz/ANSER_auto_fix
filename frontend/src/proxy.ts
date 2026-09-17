@@ -12,9 +12,21 @@ import { COOKIE_NAME, verifyToken } from "@/server/auth";
 // Đây CHỈ là lớp chặn ngoài cùng cho trải nghiệm điều hướng. Không được coi nó là lớp
 // bảo vệ duy nhất: một lần sửa `matcher` là mất sạch mà không lỗi nào nổ ra. Mọi Route
 // Handler đọc/ghi dữ liệu vẫn phải tự gọi `getSessionUser()`/`requireRole()`.
+export const CHANGE_PASSWORD_PATH = "/doi-mat-khau";
+
 export function proxy(request: NextRequest) {
   const token = request.cookies.get(COOKIE_NAME)?.value;
-  if (token && verifyToken(token)) return NextResponse.next();
+  const payload = token ? verifyToken(token) : null;
+
+  if (payload) {
+    // Mật khẩu tạm chưa đổi: đẩy về trang đổi mật khẩu thay vì cho vào dashboard. Trang
+    // đó nằm NGOÀI /dashboard (không khớp `matcher` bên dưới) nên không tạo vòng lặp
+    // chuyển hướng — đó là lý do nó không đặt trong /dashboard cho gọn.
+    if (payload.mcp) {
+      return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.url));
+    }
+    return NextResponse.next();
+  }
 
   const loginUrl = new URL("/login", request.url);
   // Giữ lại đích đến để đăng nhập xong quay về đúng trang đang muốn vào.

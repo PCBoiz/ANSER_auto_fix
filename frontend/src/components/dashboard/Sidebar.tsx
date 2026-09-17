@@ -15,6 +15,8 @@ import {
   PartIcon,
   ReceiptIcon,
   SettingsIcon,
+  ShieldIcon,
+  BranchIcon,
   StaffIcon,
   UsersIcon,
   WrenchIcon,
@@ -36,10 +38,12 @@ const MANAGER_NAV: NavItem[] = [
   { label: "Hoá đơn", icon: ReceiptIcon, href: "/dashboard/invoices" },
   { label: "Báo cáo", icon: ChartIcon, href: "/dashboard/reports" },
   { label: "Tự động hoá", icon: BoltIcon, href: "/dashboard/automation" },
+  { label: "Chi nhánh", icon: BranchIcon, href: "/dashboard/branches" },
   { label: "Nhân sự", icon: StaffIcon, href: "/dashboard/staff" },
   { label: "Chấm công nhân sự", icon: ClockIcon, href: "/dashboard/staff-attendance" },
   { label: "Tài khoản", icon: UsersIcon, href: "/dashboard/accounts" },
   { label: "Cài đặt", icon: SettingsIcon, href: "/dashboard/settings" },
+  { label: "Kiểm tra vận hành", icon: ShieldIcon, href: "/dashboard/readiness" },
 ];
 
 // Kế toán: chỉ phần tính toán hoá đơn/doanh thu + tổng hợp giờ công để tính lương —

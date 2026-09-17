@@ -1,10 +1,19 @@
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/server/db/client";
 import { employees, users } from "@/server/db/schema";
-import { badRequest, conflict, forbidden, handle, unauthorized } from "@/server/api";
+import { conflict, forbidden, handle, unauthorized } from "@/server/api";
 import { requireAdmin, requireUser } from "@/server/session";
+import {
+  emailField,
+  optionalText,
+  optionalUuid,
+  parseBody,
+  passwordField,
+  requiredText,
+} from "@/server/validation";
 import { ASSIGNABLE_ROLES, createUser, findUserByEmail, toPublicUser } from "@/server/store/users";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +34,7 @@ export async function GET() {
         email: users.email,
         role: users.role,
         employeeId: users.employeeId,
+        mustChangePassword: users.mustChangePassword,
         employeeName: employees.name,
         employeePosition: employees.position,
         createdAt: users.createdAt,
@@ -37,26 +47,28 @@ export async function GET() {
   });
 }
 
+const createSchema = z.object({
+  firstName: requiredText("Tên", 100),
+  lastName: requiredText("Họ", 100),
+  email: emailField,
+  phone: optionalText(30),
+  password: passwordField,
+  role: z.enum(ASSIGNABLE_ROLES, { message: "Chỉ gán được vai trò staff hoặc manager qua đây." }).optional(),
+  employeeId: optionalUuid,
+});
+
 // Quản lý cấp tài khoản trực tiếp cho nhân viên (mật khẩu tạm do quản lý tự đặt) — khác
-// /api/auth/register (public, tự đăng ký): route này cần requireAdmin() và cho gán luôn
-// role + employeeId ngay lúc tạo, không phải tạo xong rồi sửa lại 2 bước.
+// /api/auth/register (chỉ mở lúc khởi tạo hệ thống): route này cần requireAdmin() và cho
+// gán luôn role + employeeId ngay lúc tạo, không phải tạo xong rồi sửa lại 2 bước.
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     if (!(await requireAdmin())) return forbidden("Chỉ quản trị viên mới cấp được tài khoản.");
 
-    const body = await request.json().catch(() => ({}));
-    const { firstName, lastName, email, phone, password, role, employeeId } = body;
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
+    const { firstName, lastName, email, phone, password, role, employeeId } = parsed.data;
 
-    if (!firstName || !lastName || !email || !password) {
-      return badRequest("Thiếu thông tin bắt buộc.");
-    }
-    if (password.length < 6) {
-      return badRequest("Mật khẩu phải có ít nhất 6 ký tự.");
-    }
-    if (role && !ASSIGNABLE_ROLES.includes(role)) {
-      return badRequest("Chỉ gán được vai trò staff hoặc manager qua đây.");
-    }
     if (await findUserByEmail(email)) {
       return conflict("Email đã được sử dụng.");
     }
@@ -75,10 +87,14 @@ export async function POST(request: Request) {
       firstName,
       lastName,
       email,
-      phone: phone || undefined,
+      phone: phone ?? undefined,
       passwordHash,
-      role: role || undefined,
-      employeeId: employeeId || undefined,
+      role: role ?? undefined,
+      employeeId: employeeId ?? undefined,
+      // Mật khẩu ở đây do quản trị viên gõ và đọc lại cho nhân viên qua điện thoại/tin
+      // nhắn — tức là đã đi qua kênh không riêng tư. Bắt buộc đổi ở lần đăng nhập đầu
+      // tiên, để nó không trở thành mật khẩu vĩnh viễn mà hai người cùng biết.
+      mustChangePassword: true,
     });
 
     return NextResponse.json({ user: toPublicUser(user) }, { status: 201 });

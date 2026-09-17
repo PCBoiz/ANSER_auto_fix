@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   pgSequence,
   pgTable,
@@ -49,6 +50,12 @@ export const branches = pgTable("branches", {
   name: text("name").notNull().unique(),
   address: text("address"),
   phone: text("phone"),
+  // Chuyên môn của xưởng — gara thật có 1 xưởng máy/động cơ và 1 xưởng đồng-sơn, và đó
+  // là thông tin quyết định dòng công nào chạy ở đâu. Trước đây chỉ phân biệt bằng TÊN
+  // chi nhánh, nghĩa là muốn biết xưởng nào sơn được thì phải đọc chuỗi tự do — không
+  // lọc được, không gợi ý được lúc thêm dòng công. Xem BRANCH_SPECIALTIES trong domain.ts.
+  // `null` = xưởng đa năng / chưa phân loại, khác hẳn một chuyên môn cụ thể.
+  specialty: text("specialty"),
   // Email nhận cảnh báo tồn kho thấp / nhắc bảo dưỡng / báo cáo định kỳ qua n8n.
   notificationEmail: text("notification_email"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -77,17 +84,49 @@ export const employees = pgTable("employees", {
 });
 
 // Tài khoản đăng nhập. Phân quyền 3 cấp: "staff" < "manager" < "admin".
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
-  email: text("email").notNull().unique(),
-  phone: text("phone"),
-  passwordHash: text("password_hash").notNull(),
-  role: text("role").notNull().default("staff"),
-  employeeId: uuid("employee_id").references(() => employees.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    firstName: text("first_name").notNull(),
+    lastName: text("last_name").notNull(),
+    email: text("email").notNull().unique(),
+    phone: text("phone"),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull().default("staff"),
+    employeeId: uuid("employee_id").references(() => employees.id, { onDelete: "set null" }),
+    // Tài khoản do quản trị viên cấp (mật khẩu tạm gõ tay, thường đọc qua điện thoại) và
+    // tài khoản khởi tạo hệ thống đều bật cờ này. Dashboard chặn mọi trang cho tới khi
+    // người dùng tự đặt mật khẩu mới. Trước đây mật khẩu tạm sống mãi mãi — 3 tài khoản
+    // test trong repo này là bằng chứng.
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("users_employee_id_idx").on(table.employeeId)],
+);
+
+// Nhật ký thử đăng nhập — nền của rate-limit ở `src/server/loginThrottle.ts`.
+//
+// Vì sao lưu DB thay vì đếm trong RAM: đếm trong RAM chỉ đúng khi có đúng 1 tiến trình
+// Node chạy mãi. Deploy lên Vercel/Cloud Run là nhiều instance, mỗi instance một bộ đếm
+// riêng, và instance khởi động lại là mất sạch — kẻ dò mật khẩu chỉ cần đợi. Một bảng
+// nhỏ tốn thêm 1 câu đếm mỗi lần đăng nhập, đổi lại giới hạn đúng thật ở mọi kiểu deploy.
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // Lưu email người ta GÕ VÀO, kể cả email không tồn tại — dò mật khẩu bằng cách thử
+    // hàng loạt email là việc phải chặn, không phải bỏ qua vì "user không có thật".
+    email: text("email").notNull(),
+    ip: text("ip"),
+    success: boolean("success").notNull().default(false),
+    attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("login_attempts_email_time_idx").on(table.email, table.attemptedAt),
+    index("login_attempts_ip_time_idx").on(table.ip, table.attemptedAt),
+  ],
+);
 
 // ---------------------------------------------------------------------------
 // Khách hàng & xe
@@ -133,7 +172,11 @@ export const vehicles = pgTable("vehicles", {
   nextServiceOdometer: integer("next_service_odometer"),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("vehicles_customer_id_idx").on(table.customerId),
+  // Quy tắc "nhắc bảo dưỡng" quét đúng cột này mỗi ngày (listVehiclesDueForService).
+  index("vehicles_next_service_at_idx").on(table.nextServiceAt),
+]);
 
 // ---------------------------------------------------------------------------
 // Danh mục dịch vụ & phụ tùng
@@ -187,7 +230,13 @@ export const parts = pgTable(
   // Mã phụ tùng chỉ cần duy nhất TRONG 1 chi nhánh, không phải toàn hệ thống —
   // 2 chi nhánh có kho độc lập, ép unique toàn cục sẽ chặn chi nhánh mới nhập
   // đúng mặt hàng mà chi nhánh cũ đã có.
-  (table) => [unique("parts_branch_code_unique").on(table.branchId, table.code)],
+  (table) => [
+    unique("parts_branch_code_unique").on(table.branchId, table.code),
+    // Kho thật đã có 781 mã ở riêng xưởng đồng-sơn; lọc theo chi nhánh là thao tác
+    // mặc định của trang Kho phụ tùng và của mọi quy tắc cảnh báo tồn thấp.
+    index("parts_branch_id_idx").on(table.branchId),
+    index("parts_category_idx").on(table.category),
+  ],
 );
 
 // Nhập/xuất kho phụ tùng. Xuất kho có thể gắn với 1 lệnh sửa chữa cụ thể.
@@ -209,7 +258,12 @@ export const partTransactions = pgTable("part_transactions", {
   }),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Lịch sử nhập/xuất của MỘT phụ tùng — mở ra mỗi lần thủ kho đối chiếu tồn.
+  index("part_transactions_part_id_idx").on(table.partId),
+  index("part_transactions_order_id_idx").on(table.serviceOrderId),
+  index("part_transactions_created_at_idx").on(table.createdAt),
+]);
 
 // ---------------------------------------------------------------------------
 // Lịch hẹn
@@ -233,7 +287,11 @@ export const appointments = pgTable("appointments", {
   source: text("source").notNull().default("phone"), // "phone" | "web" | "walk_in" | "reminder"
   requestNote: text("request_note"), // khách yêu cầu gì
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // Lịch hẹn luôn đọc theo khung thời gian ("hôm nay", "24 giờ tới") kèm trạng thái.
+  index("appointments_scheduled_at_idx").on(table.scheduledAt),
+  index("appointments_status_idx").on(table.status),
+]);
 
 // ---------------------------------------------------------------------------
 // Lệnh sửa chữa (Repair Order) — trung tâm của toàn bộ nghiệp vụ
@@ -284,7 +342,18 @@ export const serviceOrders = pgTable("service_orders", {
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // `status` được lọc ở KPI "xe đang trong xưởng" (IN 7 giá trị), ở bảng điều xưởng và ở
+  // mọi báo cáo — đây là cột bị quét nhiều nhất trong hệ thống.
+  index("service_orders_status_idx").on(table.status),
+  index("service_orders_vehicle_id_idx").on(table.vehicleId),
+  index("service_orders_customer_id_idx").on(table.customerId),
+  index("service_orders_branch_id_idx").on(table.branchId),
+  // Danh sách lệnh luôn sắp xếp mới nhất trước.
+  index("service_orders_received_at_idx").on(table.receivedAt),
+  // Doanh thu theo ngày giao xe (getRevenueReport).
+  index("service_orders_delivered_at_idx").on(table.deliveredAt),
+]);
 
 // Dòng CÔNG trên lệnh sửa chữa.
 //
@@ -320,7 +389,11 @@ export const serviceOrderLabors = pgTable("service_order_labors", {
   status: text("status").notNull().default("pending"),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("service_order_labors_order_id_idx").on(table.serviceOrderId),
+  // "Khu vực nhận việc" của KTV lọc đúng cột này xuyên mọi lệnh.
+  index("service_order_labors_technician_id_idx").on(table.technicianId),
+]);
 
 // Dòng PHỤ TÙNG trên lệnh sửa chữa.
 export const serviceOrderParts = pgTable("service_order_parts", {
@@ -339,7 +412,10 @@ export const serviceOrderParts = pgTable("service_order_parts", {
   quantity: integer("quantity").notNull(),
   lineTotal: integer("line_total").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("service_order_parts_order_id_idx").on(table.serviceOrderId),
+  index("service_order_parts_part_id_idx").on(table.partId),
+]);
 
 // Phụ tùng ĐẶT NGOÀI cho một lệnh sửa chữa cụ thể — khác hẳn `serviceOrderParts`
 // (lấy từ tồn kho có sẵn, trừ kho ngay lúc thêm vào lệnh). Đặt ngoài là phụ tùng gara
@@ -376,7 +452,10 @@ export const serviceOrderSpecialOrders = pgTable("service_order_special_orders",
   billedLineId: uuid("billed_line_id").references(() => serviceOrderParts.id, {
     onDelete: "set null",
   }),
-});
+}, (table) => [
+  index("special_orders_order_id_idx").on(table.serviceOrderId),
+  index("special_orders_status_idx").on(table.status),
+]);
 
 // ---------------------------------------------------------------------------
 // Hoá đơn thanh toán
@@ -417,7 +496,12 @@ export const invoices = pgTable("invoices", {
   insuranceProvider: text("insurance_provider"),
   issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
   note: text("note"),
-});
+}, (table) => [
+  // Báo cáo doanh thu và sổ công nợ đều quét theo ngày phát hành + trạng thái.
+  index("invoices_issued_at_idx").on(table.issuedAt),
+  index("invoices_status_idx").on(table.status),
+  index("invoices_customer_id_idx").on(table.customerId),
+]);
 
 // ---------------------------------------------------------------------------
 // Cấu hình & tự động hoá
@@ -459,6 +543,25 @@ export const automationRules = pgTable("automation_rules", {
   // ID workflow thật bên n8n. Có giá trị này thì nút Chạy/Dừng/Lịch sử mới gọi n8n
   // API thật; không có thì chỉ là bookkeeping riêng của app.
   n8nWorkflowId: text("n8n_workflow_id"),
+
+  // --- Dấu vết lần chạy gần nhất (bổ sung 17/09/2026) ---
+  //
+  // Câu hỏi "workflow có TỰ chạy đúng lịch không?" trước đây không trả lời được từ trong
+  // app: lịch sử chạy chỉ nằm bên n8n, và chỉ đọc được khi n8n đang bật + API key còn
+  // hạn. Nếu n8n tắt (đúng tình trạng hôm nay: Docker không chạy), trang Tự động hoá vẫn
+  // hiện quy tắc "Đang bật" — bật trong DB của app, chứ không phải đang thật sự chạy.
+  //
+  // Ba cột dưới đây do CHÍNH workflow ghi vào khi chạy xong (node cuối gọi
+  // POST /api/n8n/internal/heartbeat). Không có nhịp tim nào trong 24h = chưa chạy, dù
+  // app có ghi "Đang bật". Đây là bằng chứng do bên thực thi để lại, không phải suy đoán.
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  // "ok" | "error" | "skipped" (chạy nhưng không có dữ liệu để gửi).
+  lastRunStatus: text("last_run_status"),
+  lastRunSummary: text("last_run_summary"),
+  // "schedule" = n8n tự nổ theo lịch; "manual" = người bấm chạy; "cron" = bộ lập lịch
+  // nội bộ của app chạy thay khi n8n không có. Phân biệt được ba nguồn này mới biết lịch
+  // có thật sự hoạt động hay chỉ toàn người bấm tay.
+  lastRunSource: text("last_run_source"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -485,7 +588,10 @@ export const salesLedger = pgTable("sales_ledger", {
   goodsDelivered: boolean("goods_delivered").notNull().default(false), // Đã xuất hàng
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("sales_ledger_voucher_date_idx").on(table.voucherDate),
+  index("sales_ledger_partner_idx").on(table.partnerName),
+]);
 
 // Sổ mua hàng (kế toán) — đối xứng với `salesLedger`, không FK `parts`/`part_transactions`
 // vì dữ liệu gốc chỉ có tổng tiền theo hoá đơn mua, không có dòng chi tiết từng phụ tùng.
@@ -510,7 +616,11 @@ export const purchaseLedger = pgTable("purchase_ledger", {
   documentType: text("document_type"), // Loại chứng từ
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("purchase_ledger_posting_date_idx").on(table.postingDate),
+  index("purchase_ledger_partner_idx").on(table.partnerName),
+  index("purchase_ledger_invoice_status_idx").on(table.invoiceStatus),
+]);
 
 // ---------------------------------------------------------------------------
 // Chấm công
@@ -529,4 +639,6 @@ export const attendanceLogs = pgTable("attendance_logs", {
   // một thời điểm (kiểm tra ở store `attendance.ts`, không ràng buộc được bằng SQL thuần).
   clockOutAt: timestamp("clock_out_at", { withTimezone: true }),
   note: text("note"),
-});
+}, (table) => [
+  index("attendance_logs_employee_time_idx").on(table.employeeId, table.clockInAt),
+]);

@@ -13,18 +13,33 @@ export async function getSessionUser(): Promise<User | undefined> {
 
 const ROLE_RANK: Record<Role, number> = { staff: 1, manager: 2, admin: 3 };
 
+// Tài khoản đang mang mật khẩu tạm chưa đổi thì KHÔNG được chạm vào dữ liệu nghiệp vụ.
+//
+// Chặn ở đây, không chỉ ở giao diện: mật khẩu tạm thường do quản lý đọc qua điện thoại
+// hoặc nhắn tin, tức là đã đi qua kênh không an toàn. Nếu chỉ chặn bằng cách chuyển
+// hướng trang, người biết mật khẩu đó vẫn gọi thẳng `/api/customers` bằng curl và đọc
+// sạch danh sách khách hàng. `requireUser()` là cửa chung của 44/51 route nên vá một
+// chỗ là kín cả hệ thống.
+//
+// `getSessionUser()` CỐ Ý không chặn — `/api/auth/me` (xem mình là ai) và chính thao
+// tác đổi mật khẩu vẫn phải chạy được, nếu không người dùng bị khoá vĩnh viễn ở ngoài.
+function blockedByTempPassword(user: User | undefined): boolean {
+  return Boolean(user?.mustChangePassword);
+}
+
 // Kiểm tra quyền ở TỪNG route, không dựa vào proxy.ts: proxy chỉ chặn theo đường
 // dẫn, một lần đổi matcher là mất sạch lớp bảo vệ mà không ai nhận ra.
 export async function requireRole(minimum: Role): Promise<User | undefined> {
   const user = await getSessionUser();
-  if (!user) return undefined;
+  if (!user || blockedByTempPassword(user)) return undefined;
   const rank = ROLE_RANK[user.role as Role];
   if (!rank || rank < ROLE_RANK[minimum]) return undefined;
   return user;
 }
 
 export async function requireUser() {
-  return getSessionUser();
+  const user = await getSessionUser();
+  return blockedByTempPassword(user) ? undefined : user;
 }
 
 export async function requireManager() {
@@ -56,7 +71,7 @@ export async function resolveUserFlow(user: User): Promise<UserFlow> {
 // của người đang đăng nhập để tự lọc dữ liệu, không nhận employeeId từ phía client.
 export async function requireEmployeeLink() {
   const user = await getSessionUser();
-  if (!user) return undefined;
+  if (!user || blockedByTempPassword(user)) return undefined;
   if (!user.employeeId) return { user, employee: undefined };
   const employee = await getEmployeeById(user.employeeId);
   return { user, employee };
@@ -68,7 +83,7 @@ export async function requireEmployeeLink() {
 // mặc định đó chỉ dùng để không mất MENU, không phải để mở dữ liệu nhạy cảm).
 export async function requirePayrollViewer(): Promise<User | undefined> {
   const user = await getSessionUser();
-  if (!user) return undefined;
+  if (!user || blockedByTempPassword(user)) return undefined;
   if (user.role !== "staff") return user;
   const flow = await resolveUserFlow(user);
   return flow === "accountant" ? user : undefined;

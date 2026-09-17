@@ -44,3 +44,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Bản sao lưu DB (scripts/backup-db.mjs). Chứa hash mật khẩu, thông tin khách hàng và
+# toàn bộ sổ kế toán — tuyệt đối không đẩy lên repo, kể cả repo riêng tư.
+/backups/

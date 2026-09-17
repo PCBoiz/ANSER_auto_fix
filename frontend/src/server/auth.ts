@@ -17,16 +17,25 @@ function getJwtSecret(): string {
   return FALLBACK_SECRET;
 }
 
-export function signToken(userId: string) {
-  return jwt.sign({ sub: userId }, getJwtSecret(), { expiresIn: "7d" });
+// `mcp` = must change password. Nhét cờ này vào chính token để `proxy.ts` chặn được
+// người dùng mang mật khẩu tạm mà KHÔNG phải truy vấn DB — proxy chạy trước mọi request
+// vào /dashboard, thêm một round-trip tới Neon ở đó là cộng thẳng vào thời gian tải của
+// từng trang. Cờ có thể cũ so với DB (token sống 7 ngày), nên nó chỉ dùng để điều hướng;
+// hàng rào thật nằm ở `requireUser()` trong session.ts, nơi đọc giá trị mới nhất từ DB.
+export type TokenPayload = { sub: string; mcp?: boolean };
+
+export function signToken(userId: string, options?: { mustChangePassword?: boolean }) {
+  const payload: TokenPayload = { sub: userId };
+  if (options?.mustChangePassword) payload.mcp = true;
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
 }
 
-export function verifyToken(token: string): { sub: string } | null {
+export function verifyToken(token: string): TokenPayload | null {
   // Lấy secret NGOÀI try: thiếu cấu hình là lỗi vận hành phải nổ ra, không được lẫn
   // vào nhánh "token không hợp lệ" khiến cả hệ thống lặng lẽ đăng xuất mọi người.
   const secret = getJwtSecret();
   try {
-    return jwt.verify(token, secret) as { sub: string };
+    return jwt.verify(token, secret) as TokenPayload;
   } catch {
     return null;
   }

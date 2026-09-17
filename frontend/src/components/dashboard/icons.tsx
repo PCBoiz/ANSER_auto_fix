@@ -79,3 +79,7 @@ export const PartIcon = (p: IconProps) =>
     <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm9.4-1.5-1.9-.5a7.6 7.6 0 0 0 0-2l1.9-.5-1-3.5-1.9.6a7.6 7.6 0 0 0-1.4-1.4l.6-1.9L14.2 3l-.5 1.9a7.6 7.6 0 0 0-2 0L11.2 3l-3.5 1.3.6 1.9a7.6 7.6 0 0 0-1.4 1.4l-1.9-.6-1 3.5 1.9.5a7.6 7.6 0 0 0 0 2l-1.9.5 1 3.5 1.9-.6c.4.5.9 1 1.4 1.4l-.6 1.9 3.5 1 .5-1.9a7.6 7.6 0 0 0 2 0l.5 1.9 3.5-1-.6-1.9c.5-.4 1-.9 1.4-1.4l1.9.6 1-3.5Z" />,
     p,
   );
+export const ShieldIcon = (p: IconProps) => base(<path d="M12 3 5 6v5.5c0 4 2.8 7.6 7 9.5 4.2-1.9 7-5.5 7-9.5V6l-7-3Zm-2.5 8.8 1.9 1.9 3.6-3.6" />, p);
+export const BranchIcon = (p: IconProps) => base(<path d="M4 20V9l6-4 6 4v11M4 20h16M10 20v-5h4v5M9 11h.01M13 11h.01" />, p);
+export const PrintIcon = (p: IconProps) => base(<path d="M7 9V4h10v5M7 18H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2M7 15h10v5H7v-5Z" />, p);
+export const UploadIcon = (p: IconProps) => base(<path d="M12 16V4m0 0L8 8m4-4 4 4M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />, p);

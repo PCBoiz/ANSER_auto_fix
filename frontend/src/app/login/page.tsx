@@ -6,13 +6,39 @@ import AuthShell from "@/components/AuthShell";
 import FloatingInput from "@/components/FloatingInput";
 import { flowLandingPath } from "@/lib/flow";
 
-// Nút điền nhanh cho tài khoản demo/test — tiện bấm thử các luồng giao diện khác nhau
-// (quản lý / kế toán / KTV) mà không phải nhớ email + mật khẩu tạm.
-const QUICK_ACCOUNTS = [
-  { label: "Tài khoản demo", email: "demo@anser.auto", password: "demo1234" },
-  { label: "Tài khoản Kế toán", email: "ketoan@anser.auto", password: "aa660156" },
-  { label: "Tài khoản KTV", email: "ktv@anser.auto", password: "f7820a49" },
-];
+// Nút điền nhanh cho tài khoản thử — tiện bấm qua lại giữa các luồng giao diện
+// (quản lý / kế toán / KTV) khi đang phát triển.
+//
+// TRƯỚC ĐÂY DANH SÁCH NÀY GHI CỨNG 3 CẶP EMAIL + MẬT KHẨU TRONG SOURCE. Đây là file
+// client component, nghĩa là ba mật khẩu đó được đóng gói vào JavaScript gửi tới TRÌNH
+// DUYỆT của mọi khách truy cập — bất kỳ ai mở tab Network cũng đọc được, không cần đăng
+// nhập. Chúng còn nằm trong lịch sử git công khai, nên phải coi là đã lộ và phải đổi.
+//
+// Nay đọc từ biến môi trường, và vì `NEXT_PUBLIC_*` vẫn đi vào bundle trình duyệt nên
+// nó CHỈ được đọc khi không phải production — đặt nhầm biến này trên server thật cũng
+// không lộ gì. Định dạng (đặt trong `.env.local`, không commit):
+//
+//   NEXT_PUBLIC_DEV_QUICK_ACCOUNTS=[{"label":"Kế toán","email":"a@b.c","password":"..."}]
+type QuickAccount = { label: string; email: string; password: string };
+
+function readQuickAccounts(): QuickAccount[] {
+  if (process.env.NODE_ENV === "production") return [];
+  const raw = process.env.NEXT_PUBLIC_DEV_QUICK_ACCOUNTS;
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (a): a is QuickAccount =>
+        typeof a === "object" && a !== null && "email" in a && "password" in a,
+    );
+  } catch {
+    // Cấu hình sai không được làm chết trang đăng nhập — đây chỉ là tiện ích lúc dev.
+    return [];
+  }
+}
+
+const QUICK_ACCOUNTS = readQuickAccounts();
 
 function LoginForm() {
   const router = useRouter();
@@ -48,6 +74,12 @@ function LoginForm() {
       // đường cho chuyển hướng sang trang giả mạo nếu tin nguyên xi. Không có `next`
       // (đăng nhập thường, không phải bị chặn từ một trang cụ thể) thì vào đúng trang
       // đích của luồng tài khoản này thay vì luôn về /dashboard.
+      // Mật khẩu tạm (do quản trị viên cấp, hoặc tài khoản khởi tạo từ env) phải được
+      // đổi trước khi vào bất cứ đâu — bỏ qua cả `next`, vì trang đó cũng sẽ chặn lại.
+      if (data.mustChangePassword) {
+        router.push("/doi-mat-khau");
+        return;
+      }
       router.push(nextPath?.startsWith("/") ? nextPath : flowLandingPath(data.flow));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không thể đăng nhập. Vui lòng thử lại.");
@@ -98,7 +130,11 @@ function LoginForm() {
         </button>
       </form>
 
+      {QUICK_ACCOUNTS.length > 0 && (
       <div className="mt-10 flex flex-col gap-2 border-t border-white/[0.08] pt-6">
+        <p className="px-1 pb-1 text-[11px] font-semibold tracking-wide text-amber-400/80 uppercase">
+          Chỉ hiện khi chạy máy dev
+        </p>
         {QUICK_ACCOUNTS.map((account) => (
           <button
             key={account.email}
@@ -113,6 +149,7 @@ function LoginForm() {
           </button>
         ))}
       </div>
+      )}
     </AuthShell>
   );
 }

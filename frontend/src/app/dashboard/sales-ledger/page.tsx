@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { toGarageDateInput } from "@/lib/format";
 import { MoneyField, TextField } from "@/components/ui/Field";
 import Modal from "@/components/ui/Modal";
 import {
@@ -30,7 +31,7 @@ type SalesLedgerEntry = {
 };
 
 const EMPTY_FORM = {
-  voucherDate: new Date().toISOString().slice(0, 10),
+  voucherDate: toGarageDateInput(new Date()),
   voucherNo: "",
   invoiceNo: "",
   partnerName: "",

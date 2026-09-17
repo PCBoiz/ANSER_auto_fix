@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { toGarageDateInput } from "@/lib/format";
 import { MoneyField, SelectField, TextAreaField, TextField } from "@/components/ui/Field";
 import Modal from "@/components/ui/Modal";
 import {
@@ -45,7 +46,7 @@ const INVOICE_STATUS_TONE: Record<PurchaseLedgerEntry["invoiceStatus"], "emerald
 };
 
 const EMPTY_FORM = {
-  postingDate: new Date().toISOString().slice(0, 10),
+  postingDate: toGarageDateInput(new Date()),
   voucherDate: "",
   voucherNo: "",
   invoiceNo: "",

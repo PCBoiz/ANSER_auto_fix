@@ -2,11 +2,14 @@
 // idempotent nên chạy lại nhiều lần không sinh dữ liệu trùng.
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const { seedDemoUser } = await import("@/server/store/users");
+    const { seedBootstrapAdmin } = await import("@/server/store/users");
     const { ensureDefaultBranch, seedInitialData } = await import("@/server/store/seed");
     const { ensureCompanySettingsRow } = await import("@/server/store/settings");
 
-    await seedDemoUser();
+    // Thay `seedDemoUser()` cũ: không còn tài khoản demo mật khẩu cố định nào được tạo
+    // tự động. Chỉ tạo quản trị viên đầu tiên khi env khai báo tường minh — xem
+    // `seedBootstrapAdmin()`.
+    await seedBootstrapAdmin();
     await ensureDefaultBranch();
     await seedInitialData();
     await ensureCompanySettingsRow();

@@ -1,0 +1,158 @@
+import { z } from "zod";
+import { badRequest } from "@/server/api";
+
+// Validate đầu vào API bằng zod, thay cho chuỗi `if (!x) return badRequest(...)` rải khắp
+// 51 route.
+//
+// Vì sao đáng đổi: kiểm tra thủ công chỉ bắt được thứ người viết NHỚ kiểm tra. Ba lỗ đã
+// thật sự tồn tại trong repo này trước khi thay:
+//   - `Number(body.amountBeforeTax) || 0` — gõ "abc" vào ô tiền thì lặng lẽ thành 0, chứng
+//     từ vẫn được tạo với số tiền sai thay vì báo lỗi.
+//   - `body.voucherNo?.trim()` — client gửi `voucherNo: 123` (số) là nổ 500 ở `.trim()`.
+//   - không route nào chặn số âm, nên giảm giá -1.000.000 là một cách cộng tiền hợp lệ.
+//
+// Quy ước: mọi schema ở đây mô tả DỮ LIỆU THÔ TỪ CLIENT (chuỗi ngày, số có thể là chuỗi),
+// và `transform` sang đúng kiểu mà tầng store cần (Date, number). Store không bao giờ phải
+// tự đoán kiểu nữa.
+
+/** Số tiền VND: số nguyên không âm. Tiền âm không phải nghiệp vụ nào ở đây cả. */
+export const vndAmount = z.coerce
+  .number({ message: "Số tiền không hợp lệ." })
+  .int("Số tiền phải là số nguyên đồng.")
+  .min(0, "Số tiền không được âm.")
+  // ~9.2 nghìn tỷ — chặn số vô lý do gõ nhầm, và giữ trong tầm `integer` của Postgres
+  // sau khi nhân số lượng. `integer` Postgres tối đa ~2,1 tỷ, nên chặn ở 2 tỷ.
+  .max(2_000_000_000, "Số tiền vượt quá giới hạn cho phép.");
+
+/** Số lượng: nguyên dương. Xuất kho 0 cái hoặc -3 cái đều không có nghĩa. */
+export const positiveQuantity = z.coerce
+  .number({ message: "Số lượng không hợp lệ." })
+  .int("Số lượng phải là số nguyên.")
+  .positive("Số lượng phải lớn hơn 0.")
+  .max(1_000_000, "Số lượng vượt quá giới hạn cho phép.");
+
+/** Số nguyên không âm, cho phép bỏ trống (null = chưa biết, khác 0). */
+export const optionalNonNegativeInt = z
+  .union([z.coerce.number().int().min(0), z.null(), z.literal("")])
+  .transform((v) => (v === "" || v === null ? null : (v as number)));
+
+/** Chuỗi bắt buộc, đã trim, không rỗng. */
+export const requiredText = (label: string, max = 500) =>
+  z
+    .string({ message: `${label} không hợp lệ.` })
+    .trim()
+    .min(1, `${label} không được để trống.`)
+    .max(max, `${label} quá dài (tối đa ${max} ký tự).`);
+
+/** Chuỗi tuỳ chọn: "" và null đều quy về null, để DB không lưu chuỗi rỗng lẫn null. */
+export const optionalText = (max = 500) =>
+  z
+    .union([z.string().trim().max(max), z.null()])
+    .optional()
+    .transform((v) => (v === undefined || v === null || v === "" ? null : v));
+
+export const emailField = z
+  .string({ message: "Email không hợp lệ." })
+  .trim()
+  .toLowerCase()
+  .email("Email không đúng định dạng.")
+  .max(255);
+
+export const optionalEmail = z
+  .union([z.string().trim().toLowerCase().email("Email không đúng định dạng.").max(255), z.literal(""), z.null()])
+  .optional()
+  .transform((v) => (v === undefined || v === null || v === "" ? null : v));
+
+/**
+ * Mật khẩu. 8 ký tự thay vì 6 như trước: 6 ký tự chữ thường là ~300 triệu tổ hợp, máy
+ * bàn thường dò xong trong vài giờ nếu lấy được bản hash. Không ép ký tự đặc biệt —
+ * quy tắc đó đẩy người dùng tới `Matkhau@1` rồi dán lên màn hình, độ dài mới là thứ
+ * thật sự làm tăng chi phí dò.
+ */
+export const passwordField = z
+  .string({ message: "Mật khẩu không hợp lệ." })
+  .min(8, "Mật khẩu phải có ít nhất 8 ký tự.")
+  .max(200, "Mật khẩu quá dài.");
+
+export const uuidField = z.string().uuid("Mã định danh không hợp lệ.");
+
+export const optionalUuid = z
+  .union([z.string().uuid("Mã định danh không hợp lệ."), z.literal(""), z.null()])
+  .optional()
+  .transform((v) => (v === undefined || v === null || v === "" ? null : v));
+
+/**
+ * Ngày gửi từ client (chuỗi ISO hoặc `yyyy-mm-dd`) -> `Date`.
+ *
+ * `new Date("linh tinh")` cho ra `Invalid Date` — một object Date hợp lệ về kiểu, nhưng
+ * ném vào Postgres là lỗi 500 khó hiểu. Chặn ngay tại cửa.
+ */
+export const dateField = z
+  .union([z.string(), z.date()])
+  .transform((v, ctx) => {
+    const d = v instanceof Date ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      ctx.addIssue({ code: "custom", message: "Ngày không hợp lệ." });
+      return z.NEVER;
+    }
+    return d;
+  });
+
+export const optionalDate = z
+  .union([z.string(), z.date(), z.null()])
+  .optional()
+  .transform((v, ctx) => {
+    if (v === undefined || v === null || v === "") return null;
+    const d = v instanceof Date ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      ctx.addIssue({ code: "custom", message: "Ngày không hợp lệ." });
+      return z.NEVER;
+    }
+    return d;
+  });
+
+export type ParseResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; response: ReturnType<typeof badRequest> };
+
+/**
+ * Đọc JSON body và validate. Trả về thẳng `badRequest` kèm thông điệp tiếng Việt của
+ * trường đầu tiên sai — người dùng cần biết SỬA Ô NÀO, không cần cả cây lỗi zod.
+ *
+ * Dùng:
+ * ```ts
+ * const parsed = await parseBody(request, schema);
+ * if (!parsed.ok) return parsed.response;
+ * // parsed.data đã đúng kiểu
+ * ```
+ */
+export async function parseBody<S extends z.ZodTypeAny>(
+  request: Request,
+  schema: S,
+): Promise<ParseResult<z.infer<S>>> {
+  const raw = await request.json().catch(() => undefined);
+  if (raw === undefined) {
+    return { ok: false, response: badRequest("Nội dung gửi lên không phải JSON hợp lệ.") };
+  }
+  return parseValue(raw, schema);
+}
+
+/** Như `parseBody` nhưng nhận sẵn giá trị — dùng cho query string đã gom thành object. */
+export function parseValue<S extends z.ZodTypeAny>(
+  value: unknown,
+  schema: S,
+): ParseResult<z.infer<S>> {
+  const result = schema.safeParse(value);
+  if (result.success) return { ok: true, data: result.data };
+
+  const first = result.error.issues[0];
+  // Ghép đường dẫn trường vào thông điệp khi zod chỉ trả lỗi chung chung ("Required"),
+  // để "Thiếu trường" còn biết là thiếu trường nào.
+  const path = first?.path?.join(".");
+  const message = first?.message ?? "Dữ liệu không hợp lệ.";
+  const withField = path && !message.includes(path) && /required|invalid|expected/i.test(message)
+    ? `Trường "${path}": ${message}`
+    : message;
+
+  return { ok: false, response: badRequest(withField) };
+}
