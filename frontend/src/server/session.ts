@@ -77,14 +77,33 @@ export async function requireEmployeeLink() {
   return { user, employee };
 }
 
-// Ai được xem TỔNG HỢP giờ công của toàn bộ nhân sự (để tính lương) — theo quyết định
-// 20/08/2026: cả quản lý/admin lẫn tài khoản đã gán luồng kế toán, KHÔNG phải staff
-// thường (kể cả khi staff đó rơi vào flow "manager" mặc định vì chưa liên kết nhân sự —
-// mặc định đó chỉ dùng để không mất MENU, không phải để mở dữ liệu nhạy cảm).
-export async function requirePayrollViewer(): Promise<User | undefined> {
+// "Quản lý trở lên, HOẶC tài khoản staff đã liên kết đúng hồ sơ nhân sự Kế toán".
+//
+// Cố ý KHÔNG dùng `resolveUserFlow() !== "technician"`: tài khoản staff chưa liên kết
+// nhân sự cũng rơi vào flow "manager" (mặc định để không mất MENU), nhưng không vì thế mà
+// được mở dữ liệu nhạy cảm. Mặc định đó chỉ dành cho menu.
+async function managerOrAccountant(): Promise<User | undefined> {
   const user = await getSessionUser();
   if (!user || blockedByTempPassword(user)) return undefined;
   if (user.role !== "staff") return user;
   const flow = await resolveUserFlow(user);
   return flow === "accountant" ? user : undefined;
+}
+
+// Ai được xem TỔNG HỢP giờ công của toàn bộ nhân sự (để tính lương) — theo quyết định
+// 20/08/2026: cả quản lý/admin lẫn tài khoản đã gán luồng kế toán, KHÔNG phải staff thường.
+export async function requirePayrollViewer(): Promise<User | undefined> {
+  return managerOrAccountant();
+}
+
+// Ai được SỬA/XOÁ chứng từ trong sổ bán hàng/mua hàng (bổ sung 17/09/2026).
+//
+// Cùng tập người với `requirePayrollViewer` nhưng tách tên riêng: hai quyền này hôm nay
+// trùng nhau là trùng hợp nghiệp vụ, không phải một quy tắc. Ngày gara muốn kế toán xem
+// giờ công nhưng không được xoá chứng từ (hoặc ngược lại), chỉ cần sửa một hàm.
+//
+// Thêm chứng từ mới vẫn chỉ cần `requireUser()` như trước — nhập liệu là việc thường
+// ngày, còn sửa số tiền của chứng từ đã ghi sổ hay xoá hẳn nó thì không.
+export async function requireLedgerEditor(): Promise<User | undefined> {
+  return managerOrAccountant();
 }

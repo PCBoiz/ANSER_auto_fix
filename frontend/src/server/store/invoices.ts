@@ -1,6 +1,15 @@
 import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { customers, invoices, serviceOrders } from "@/server/db/schema";
+import {
+  branches,
+  customers,
+  employees,
+  invoices,
+  serviceOrderLabors,
+  serviceOrderParts,
+  serviceOrders,
+  vehicles,
+} from "@/server/db/schema";
 import { nextInvoiceCode } from "@/server/store/codes";
 import { getCompanySettings } from "@/server/store/settings";
 
@@ -120,6 +129,84 @@ export async function listUnpaidInvoicesOlderThan(minDays: number): Promise<Unpa
     .orderBy(desc(invoices.issuedAt));
 
   return rows.map((r) => ({ ...r, outstanding: r.total - r.paidAmount }));
+}
+
+/**
+ * Mọi thứ cần để IN một hoá đơn, trong một lần gọi.
+ *
+ * Dòng chi tiết đọc từ `service_order_labors`/`service_order_parts` — đúng thiết kế đã
+ * có (hoá đơn không có bảng dòng riêng, vì hai bảng đó đã là snapshot bất biến). Tên
+ * khách và biển số lấy từ SNAPSHOT trên chính hoá đơn, không join lại hồ sơ khách: khách
+ * đổi tên hay xe đổi biển sau này không được làm tờ hoá đơn cũ in ra khác đi.
+ */
+export async function getInvoiceDetail(id: string) {
+  const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id)).limit(1);
+  if (!invoice) return undefined;
+
+  const [order] = await db
+    .select({
+      code: serviceOrders.code,
+      odometerIn: serviceOrders.odometerIn,
+      receivedAt: serviceOrders.receivedAt,
+      deliveredAt: serviceOrders.deliveredAt,
+      customerComplaint: serviceOrders.customerComplaint,
+      diagnosis: serviceOrders.diagnosis,
+      laborTotal: serviceOrders.laborTotal,
+      partsTotal: serviceOrders.partsTotal,
+      vehicleMake: vehicles.make,
+      vehicleModel: vehicles.model,
+      vehicleYear: vehicles.year,
+      vehicleVin: vehicles.vin,
+      branchName: branches.name,
+      branchAddress: branches.address,
+      branchPhone: branches.phone,
+      advisorName: employees.name,
+    })
+    .from(serviceOrders)
+    .innerJoin(vehicles, eq(serviceOrders.vehicleId, vehicles.id))
+    .innerJoin(branches, eq(serviceOrders.branchId, branches.id))
+    .leftJoin(employees, eq(serviceOrders.advisorId, employees.id))
+    .where(eq(serviceOrders.id, invoice.serviceOrderId))
+    .limit(1);
+
+  const [customer] = invoice.customerId
+    ? await db
+        .select({
+          phone: customers.phone,
+          address: customers.address,
+          taxCode: customers.taxCode,
+          type: customers.type,
+        })
+        .from(customers)
+        .where(eq(customers.id, invoice.customerId))
+        .limit(1)
+    : [];
+
+  const [labors, partLines] = await Promise.all([
+    db
+      .select({
+        name: serviceOrderLabors.name,
+        quantity: serviceOrderLabors.quantity,
+        unitPrice: serviceOrderLabors.unitPrice,
+        lineTotal: serviceOrderLabors.lineTotal,
+      })
+      .from(serviceOrderLabors)
+      .where(eq(serviceOrderLabors.serviceOrderId, invoice.serviceOrderId))
+      .orderBy(serviceOrderLabors.createdAt),
+    db
+      .select({
+        name: serviceOrderParts.name,
+        unit: serviceOrderParts.unit,
+        quantity: serviceOrderParts.quantity,
+        unitPrice: serviceOrderParts.unitPrice,
+        lineTotal: serviceOrderParts.lineTotal,
+      })
+      .from(serviceOrderParts)
+      .where(eq(serviceOrderParts.serviceOrderId, invoice.serviceOrderId))
+      .orderBy(serviceOrderParts.createdAt),
+  ]);
+
+  return { invoice, order, customer, labors, parts: partLines };
 }
 
 export async function getInvoiceByOrderId(orderId: string): Promise<Invoice | undefined> {

@@ -275,18 +275,30 @@ function InvoicesContent() {
                       </Badge>
                     </td>
                     <td className="px-5 py-3 text-right">
-                      {inv.status !== "paid" && (
-                        <button
-                          onClick={() => {
-                            setPaying(inv);
-                            setPayAmount(inv.total);
-                            setPayMethod(inv.paymentMethod ?? "cash");
-                          }}
-                          className="rounded-lg px-2 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/10"
+                      <div className="flex justify-end gap-1">
+                        {/* Mở tab mới: bản in là trang riêng không có sidebar, và người dùng
+                            thường cần quay lại đúng vị trí đang xem trong danh sách. */}
+                        <a
+                          href={`/in/hoa-don/${inv.id}`}
+                          target="_blank"
+                          rel="noopener"
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-300 hover:bg-white/[0.06]"
                         >
-                          Ghi nhận thu
-                        </button>
-                      )}
+                          In
+                        </a>
+                        {inv.status !== "paid" && (
+                          <button
+                            onClick={() => {
+                              setPaying(inv);
+                              setPayAmount(inv.total);
+                              setPayMethod(inv.paymentMethod ?? "cash");
+                            }}
+                            className="rounded-lg px-2 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/10"
+                          >
+                            Ghi nhận thu
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

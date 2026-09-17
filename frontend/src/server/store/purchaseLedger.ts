@@ -1,4 +1,4 @@
-import { and, desc, gte, ilike, lte } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { purchaseLedger } from "@/server/db/schema";
 
@@ -44,4 +44,23 @@ export type PurchaseLedgerInput = {
 export async function createPurchaseLedgerEntry(input: PurchaseLedgerInput) {
   const [entry] = await db.insert(purchaseLedger).values(input).returning();
   return entry;
+}
+
+export async function getPurchaseLedgerEntryById(id: string) {
+  const [entry] = await db.select().from(purchaseLedger).where(eq(purchaseLedger.id, id)).limit(1);
+  return entry;
+}
+
+// Sửa chứng từ. Nhận `Partial` và chỉ ghi đúng những trường có mặt — route đã validate
+// bằng lược đồ PATCH không có default (xem ledgerSchemas.ts), nên trường không gửi lên
+// sẽ không xuất hiện ở đây và giữ nguyên giá trị trong DB.
+export async function updatePurchaseLedgerEntry(id: string, patch: Partial<PurchaseLedgerInput>) {
+  if (Object.keys(patch).length === 0) return getPurchaseLedgerEntryById(id);
+  const [entry] = await db.update(purchaseLedger).set(patch).where(eq(purchaseLedger.id, id)).returning();
+  return entry;
+}
+
+export async function deletePurchaseLedgerEntry(id: string) {
+  const rows = await db.delete(purchaseLedger).where(eq(purchaseLedger.id, id)).returning({ id: purchaseLedger.id });
+  return rows.length > 0;
 }

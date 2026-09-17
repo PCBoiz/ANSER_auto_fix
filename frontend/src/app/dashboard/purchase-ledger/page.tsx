@@ -2,11 +2,13 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { toGarageDateInput } from "@/lib/format";
+import { EditIcon, TrashIcon } from "@/components/dashboard/icons";
 import { MoneyField, SelectField, TextAreaField, TextField } from "@/components/ui/Field";
 import Modal from "@/components/ui/Modal";
 import {
   Badge,
   Card,
+  DangerButton,
   EmptyState,
   ErrorBanner,
   GhostButton,
@@ -29,7 +31,10 @@ type PurchaseLedgerEntry = {
   discountAmount: number;
   vatAmount: number;
   totalAmount: number;
+  purchaseCost: number;
+  inventoryValue: number;
   invoiceStatus: "not_received" | "received" | "none";
+  isPurchaseCost: boolean;
   documentType: string | null;
 };
 
@@ -72,6 +77,9 @@ export default function PurchaseLedgerPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
+  // Dùng CHUNG modal với "Thêm chứng từ" — xem ghi chú cùng chỗ ở trang Sổ bán hàng.
+  const [editing, setEditing] = useState<PurchaseLedgerEntry | null>(null);
+  const [deleting, setDeleting] = useState<PurchaseLedgerEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -103,9 +111,56 @@ export default function PurchaseLedgerPage() {
   const totalAmount = entries.reduce((sum, e) => sum + e.totalAmount, 0);
 
   function openCreate() {
-    setForm(EMPTY_FORM);
+    // Ngày mặc định tính lại mỗi lần mở, không chốt từ lúc tải trang.
+    setForm({ ...EMPTY_FORM, postingDate: toGarageDateInput(new Date()) });
     setCreateError(null);
+    setEditing(null);
     setCreating(true);
+  }
+
+  function openEdit(entry: PurchaseLedgerEntry) {
+    setForm({
+      postingDate: toGarageDateInput(entry.postingDate),
+      voucherDate: toGarageDateInput(entry.voucherDate),
+      voucherNo: entry.voucherNo ?? "",
+      invoiceNo: entry.invoiceNo ?? "",
+      partnerName: entry.partnerName,
+      description: entry.description ?? "",
+      amountBeforeTax: entry.amountBeforeTax,
+      discountAmount: entry.discountAmount,
+      vatAmount: entry.vatAmount,
+      totalAmount: entry.totalAmount,
+      purchaseCost: entry.purchaseCost,
+      inventoryValue: entry.inventoryValue,
+      invoiceStatus: entry.invoiceStatus,
+      isPurchaseCost: entry.isPurchaseCost,
+      documentType: entry.documentType ?? "",
+    });
+    setCreateError(null);
+    setEditing(entry);
+    setCreating(true);
+  }
+
+  function closeForm() {
+    setCreating(false);
+    setEditing(null);
+  }
+
+  async function handleDelete() {
+    if (!deleting) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/purchase-ledger/${deleting.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? "Không xoá được chứng từ.");
+      setDeleting(null);
+      await load(search, from, to);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi không xác định.");
+      setDeleting(null);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleCreateSubmit(e: FormEvent) {
@@ -113,14 +168,16 @@ export default function PurchaseLedgerPage() {
     setSaving(true);
     setCreateError(null);
     try {
-      const res = await fetch("/api/purchase-ledger", {
-        method: "POST",
+      const res = await fetch(editing ? `/api/purchase-ledger/${editing.id}` : "/api/purchase-ledger", {
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        // Ô "Ngày chứng từ" để trống nghĩa là không có — gửi null thay vì chuỗi rỗng, để
+        // server không phải đoán "" là "xoá ngày" hay "ngày không hợp lệ".
+        body: JSON.stringify({ ...form, voucherDate: form.voucherDate || null }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message ?? "Không lưu được.");
-      setCreating(false);
+      closeForm();
       await load(search, from, to);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Lỗi không xác định.");
@@ -178,6 +235,7 @@ export default function PurchaseLedgerPage() {
                   <th className="px-5 py-3 text-right font-semibold">Thuế GTGT</th>
                   <th className="px-5 py-3 text-right font-semibold">Thanh toán</th>
                   <th className="px-5 py-3 font-semibold">Hoá đơn</th>
+                  <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -203,6 +261,26 @@ export default function PurchaseLedgerPage() {
                         {INVOICE_STATUS_LABEL[e.invoiceStatus]}
                       </Badge>
                     </td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(e)}
+                          className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+                          aria-label={`Sửa chứng từ ${e.voucherNo ?? e.partnerName}`}
+                        >
+                          <EditIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleting(e)}
+                          className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                          aria-label={`Xoá chứng từ ${e.voucherNo ?? e.partnerName}`}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -212,7 +290,7 @@ export default function PurchaseLedgerPage() {
                     Tổng ({entries.length} hoá đơn)
                   </td>
                   <td className="px-5 py-3 text-right">{formatVnd(totalAmount)}</td>
-                  <td className="px-5 py-3" />
+                  <td className="px-5 py-3" colSpan={2} />
                 </tr>
               </tfoot>
             </table>
@@ -222,11 +300,11 @@ export default function PurchaseLedgerPage() {
 
       {creating && (
         <Modal
-          title="Thêm chứng từ mua hàng"
-          onClose={() => setCreating(false)}
+          title={editing ? `Sửa chứng từ ${editing.voucherNo ?? ""}`.trim() : "Thêm chứng từ mua hàng"}
+          onClose={closeForm}
           footer={
             <>
-              <GhostButton type="button" onClick={() => setCreating(false)}>
+              <GhostButton type="button" onClick={closeForm}>
                 Huỷ
               </GhostButton>
               <PrimaryButton type="submit" form="purchase-ledger-form" disabled={saving}>
@@ -344,6 +422,34 @@ export default function PurchaseLedgerPage() {
               Là chi phí mua hàng
             </label>
           </form>
+        </Modal>
+      )}
+
+      {deleting && (
+        <Modal
+          title="Xoá chứng từ"
+          onClose={() => setDeleting(null)}
+          footer={
+            <>
+              <GhostButton type="button" onClick={() => setDeleting(null)} disabled={saving}>
+                Huỷ
+              </GhostButton>
+              <DangerButton type="button" onClick={handleDelete} disabled={saving}>
+                {saving ? "Đang xoá..." : "Xoá chứng từ"}
+              </DangerButton>
+            </>
+          }
+        >
+          <p className="text-sm text-zinc-300">
+            Xoá chứng từ <span className="font-mono">{deleting.voucherNo ?? "(không số)"}</span> ngày{" "}
+            {formatDate(deleting.postingDate)} của{" "}
+            <span className="font-semibold">{deleting.partnerName}</span>, tổng{" "}
+            {formatVnd(deleting.totalAmount)}?
+          </p>
+          <p className="mt-2 text-sm text-zinc-500">
+            Không hoàn tác được. Dùng cho dòng nhập trùng hoặc nhập nhầm sổ — nếu chỉ sai số tiền
+            thì nên bấm Sửa.
+          </p>
         </Modal>
       )}
     </div>

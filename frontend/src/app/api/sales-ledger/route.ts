@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { badRequest, handle, unauthorized } from "@/server/api";
+import { handle, unauthorized } from "@/server/api";
+import { salesLedgerSchema } from "@/server/ledgerSchemas";
+import { parseBody } from "@/server/validation";
 import { requireUser } from "@/server/session";
 import { createSalesLedgerEntry, listSalesLedger } from "@/server/store/salesLedger";
 
@@ -23,27 +25,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
-    const body = await request.json().catch(() => ({}));
 
-    const partnerName = typeof body.partnerName === "string" ? body.partnerName.trim() : "";
-    const voucherDateRaw = typeof body.voucherDate === "string" ? body.voucherDate : "";
-    const voucherDate = voucherDateRaw ? new Date(voucherDateRaw) : null;
-    if (!partnerName || !voucherDate || Number.isNaN(voucherDate.getTime())) {
-      return badRequest("Thiếu ngày chứng từ hoặc tên khách hàng.");
-    }
+    const parsed = await parseBody(request, salesLedgerSchema);
+    if (!parsed.ok) return parsed.response;
 
-    const entry = await createSalesLedgerEntry({
-      voucherDate,
-      voucherNo: body.voucherNo?.trim() || null,
-      invoiceNo: body.invoiceNo?.trim() || null,
-      partnerName,
-      amountBeforeTax: Number(body.amountBeforeTax) || 0,
-      vatAmount: Number(body.vatAmount) || 0,
-      totalAmount: Number(body.totalAmount) || 0,
-      invoiceIssued: body.invoiceIssued === true,
-      goodsDelivered: body.goodsDelivered === true,
-      note: body.note?.trim() || null,
-    });
+    const entry = await createSalesLedgerEntry(parsed.data);
     return NextResponse.json({ entry }, { status: 201 });
   });
 }

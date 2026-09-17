@@ -2,11 +2,13 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { toGarageDateInput } from "@/lib/format";
+import { EditIcon, TrashIcon } from "@/components/dashboard/icons";
 import { MoneyField, TextField } from "@/components/ui/Field";
 import Modal from "@/components/ui/Modal";
 import {
   Badge,
   Card,
+  DangerButton,
   EmptyState,
   ErrorBanner,
   GhostButton,
@@ -51,6 +53,10 @@ export default function SalesLedgerPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
+  // Chứng từ đang sửa. Dùng CHUNG modal với "Thêm chứng từ" — hai form khác nhau cho cùng
+  // một bộ trường là cách chắc chắn nhất để một ngày nào đó chúng lệch nhau.
+  const [editing, setEditing] = useState<SalesLedgerEntry | null>(null);
+  const [deleting, setDeleting] = useState<SalesLedgerEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -82,9 +88,51 @@ export default function SalesLedgerPage() {
   const totalAmount = entries.reduce((sum, e) => sum + e.totalAmount, 0);
 
   function openCreate() {
-    setForm(EMPTY_FORM);
+    // Tính lại ngày mặc định MỖI LẦN mở, không dùng giá trị chốt lúc tải trang: kế toán để
+    // tab mở qua đêm thì chứng từ sáng hôm sau vẫn phải mặc định là hôm nay.
+    setForm({ ...EMPTY_FORM, voucherDate: toGarageDateInput(new Date()) });
     setCreateError(null);
+    setEditing(null);
     setCreating(true);
+  }
+
+  function openEdit(entry: SalesLedgerEntry) {
+    setForm({
+      voucherDate: toGarageDateInput(entry.voucherDate),
+      voucherNo: entry.voucherNo ?? "",
+      invoiceNo: entry.invoiceNo ?? "",
+      partnerName: entry.partnerName,
+      amountBeforeTax: entry.amountBeforeTax,
+      vatAmount: entry.vatAmount,
+      totalAmount: entry.totalAmount,
+      invoiceIssued: entry.invoiceIssued,
+      goodsDelivered: entry.goodsDelivered,
+    });
+    setCreateError(null);
+    setEditing(entry);
+    setCreating(true);
+  }
+
+  function closeForm() {
+    setCreating(false);
+    setEditing(null);
+  }
+
+  async function handleDelete() {
+    if (!deleting) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/sales-ledger/${deleting.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? "Không xoá được chứng từ.");
+      setDeleting(null);
+      await load(search, from, to);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi không xác định.");
+      setDeleting(null);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleCreateSubmit(e: FormEvent) {
@@ -92,14 +140,14 @@ export default function SalesLedgerPage() {
     setSaving(true);
     setCreateError(null);
     try {
-      const res = await fetch("/api/sales-ledger", {
-        method: "POST",
+      const res = await fetch(editing ? `/api/sales-ledger/${editing.id}` : "/api/sales-ledger", {
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message ?? "Không lưu được.");
-      setCreating(false);
+      closeForm();
       await load(search, from, to);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Lỗi không xác định.");
@@ -157,6 +205,7 @@ export default function SalesLedgerPage() {
                   <th className="px-5 py-3 text-right font-semibold">Thuế GTGT</th>
                   <th className="px-5 py-3 text-right font-semibold">Thanh toán</th>
                   <th className="px-5 py-3 font-semibold">Trạng thái</th>
+                  <th className="px-5 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -189,6 +238,26 @@ export default function SalesLedgerPage() {
                         </Badge>
                       </div>
                     </td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(e)}
+                          className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-white"
+                          aria-label={`Sửa chứng từ ${e.voucherNo ?? e.partnerName}`}
+                        >
+                          <EditIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleting(e)}
+                          className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                          aria-label={`Xoá chứng từ ${e.voucherNo ?? e.partnerName}`}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -198,7 +267,7 @@ export default function SalesLedgerPage() {
                     Tổng ({entries.length} hoá đơn)
                   </td>
                   <td className="px-5 py-3 text-right">{formatVnd(totalAmount)}</td>
-                  <td className="px-5 py-3" />
+                  <td className="px-5 py-3" colSpan={2} />
                 </tr>
               </tfoot>
             </table>
@@ -208,11 +277,11 @@ export default function SalesLedgerPage() {
 
       {creating && (
         <Modal
-          title="Thêm chứng từ bán hàng"
-          onClose={() => setCreating(false)}
+          title={editing ? `Sửa chứng từ ${editing.voucherNo ?? ""}`.trim() : "Thêm chứng từ bán hàng"}
+          onClose={closeForm}
           footer={
             <>
-              <GhostButton type="button" onClick={() => setCreating(false)}>
+              <GhostButton type="button" onClick={closeForm}>
                 Huỷ
               </GhostButton>
               <PrimaryButton type="submit" form="sales-ledger-form" disabled={saving}>
@@ -271,6 +340,11 @@ export default function SalesLedgerPage() {
                 onValueChange={(v) => setForm((p) => ({ ...p, totalAmount: v }))}
               />
             </div>
+            <TaxGapHint
+              beforeTax={form.amountBeforeTax}
+              vat={form.vatAmount}
+              total={form.totalAmount}
+            />
             <div className="flex flex-wrap gap-5">
               <label className="flex items-center gap-2 text-sm text-zinc-300">
                 <input
@@ -294,6 +368,61 @@ export default function SalesLedgerPage() {
           </form>
         </Modal>
       )}
+
+      {deleting && (
+        <Modal
+          title="Xoá chứng từ"
+          onClose={() => setDeleting(null)}
+          footer={
+            <>
+              <GhostButton type="button" onClick={() => setDeleting(null)} disabled={saving}>
+                Huỷ
+              </GhostButton>
+              <DangerButton type="button" onClick={handleDelete} disabled={saving}>
+                {saving ? "Đang xoá..." : "Xoá chứng từ"}
+              </DangerButton>
+            </>
+          }
+        >
+          <p className="text-sm text-zinc-300">
+            Xoá chứng từ <span className="font-mono">{deleting.voucherNo ?? "(không số)"}</span> ngày{" "}
+            {formatDate(deleting.voucherDate)} của{" "}
+            <span className="font-semibold">{deleting.partnerName}</span>, tổng{" "}
+            {formatVnd(deleting.totalAmount)}?
+          </p>
+          <p className="mt-2 text-sm text-zinc-500">
+            Không hoàn tác được. Dùng cho dòng nhập trùng hoặc nhập nhầm sổ — nếu chỉ sai số tiền
+            thì nên bấm Sửa.
+          </p>
+        </Modal>
+      )}
     </div>
+  );
+}
+
+// Giải thích chênh lệch giữa (tiền hàng + thuế) và tổng thanh toán, thay vì báo lỗi.
+//
+// Trên dữ liệu thật của gara, 213/232 chứng từ có tổng THẤP hơn tiền hàng đúng 0,6% hoặc
+// 0,2% với thuế GTGT = 0. Đó là mức giảm 20% tỷ lệ tính thuế theo phương pháp trực tiếp,
+// không phải nhập sai. Hiện ra để người nhập nhận biết được, nhưng không chặn lưu.
+function TaxGapHint({ beforeTax, vat, total }: { beforeTax: number; vat: number; total: number }) {
+  const gap = beforeTax + vat - total;
+  if (gap === 0 || beforeTax === 0) return null;
+
+  const pct = Math.round((gap / beforeTax) * 1000) / 10;
+  const matchesDirectMethodReduction = vat === 0 && (pct === 0.6 || pct === 0.2);
+
+  return (
+    <p
+      className={`rounded-lg px-3 py-2 text-xs ${
+        matchesDirectMethodReduction ? "bg-sky-500/10 text-sky-300" : "bg-amber-500/10 text-amber-300"
+      }`}
+    >
+      {gap > 0 ? "Tổng thấp hơn" : "Tổng cao hơn"} tiền hàng + thuế{" "}
+      <strong>{formatVnd(Math.abs(gap))}</strong> ({Math.abs(pct).toLocaleString("vi-VN")}%).{" "}
+      {matchesDirectMethodReduction
+        ? "Khớp mức giảm thuế GTGT theo phương pháp trực tiếp (dịch vụ 0,6% / hàng hoá 0,2%)."
+        : "Kiểm tra lại số tiền — chênh lệch này không khớp mức giảm thuế thường gặp."}
+    </p>
   );
 }

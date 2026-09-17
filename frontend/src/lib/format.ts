@@ -11,14 +11,17 @@ export function formatVnd(amount: number | null | undefined) {
 
 // Múi giờ của gara. Mọi hàm định dạng ngày/giờ PHẢI truyền tham số này.
 //
-// Bẫy đã dính: `formatDate` từng gọi `toLocaleDateString("vi-VN")` không kèm `timeZone`,
-// tức là lấy múi giờ của MÁY đang chạy. Trên máy dev (ICT) thì đúng, nhưng server deploy
-// hầu như luôn chạy UTC — và một chứng từ ngày 02/01/2025 lưu thành `2025-01-01T17:00Z`
-// sẽ hiện ra "1/1/2025". Toàn bộ 368 chứng từ trong sổ kế toán lùi đúng một ngày, con số
-// vẫn cộng đúng nên không ai nghi ngờ tới lúc đối chiếu với cơ quan thuế.
+// `formatDate` từng gọi `toLocaleDateString("vi-VN")` không kèm `timeZone`, tức là lấy
+// múi giờ của MÁY đang chạy hàm. Trong trình duyệt ở Việt Nam thì luôn đúng, nên lỗi này
+// nằm im chừng nào mọi nơi gọi `formatDate` còn là client component.
 //
-// Đây là loại lỗi chỉ xuất hiện SAU khi rời localhost, nên không thể phát hiện bằng cách
-// dùng thử trên máy.
+// Nó nổ khi hàm chạy PHÍA SERVER (Server Component, trang in hoá đơn) trên máy chủ UTC —
+// gần như mọi nơi deploy. Mốc thời gian tạo trong khoảng 00:00–07:00 giờ Việt Nam rơi vào
+// NGÀY HÔM TRƯỚC theo UTC: chấm công vào ca 6h30 sáng 18/09 lưu thành `17/09 23:30Z` và
+// hiện ra "17/9". Hoá đơn lập sớm cũng vậy.
+//
+// Không ảnh hưởng chứng từ sổ kế toán: chúng là ngày thuần, lưu ở `00:00Z`, nên hiện đúng
+// ngày ở cả hai múi giờ. (Đã đo trên 368 chứng từ thật ngày 17/09/2026 để chắc chắn.)
 export const GARAGE_TIME_ZONE = "Asia/Ho_Chi_Minh";
 
 export function formatDate(value: string | Date | null | undefined) {
