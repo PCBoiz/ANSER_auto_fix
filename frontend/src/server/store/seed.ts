@@ -3,7 +3,7 @@ import { automationRules, branches, employees, parts, services } from "@/server/
 import { DEFAULT_LOW_STOCK_THRESHOLD, type AutomationRuleType } from "@/server/domain";
 import { listBranches } from "@/server/store/branches";
 
-const SEED_SERVICES = [
+export const SEED_SERVICES = [
   { code: "DV-001", name: "Bảo dưỡng cấp 1 (5.000 km)", category: "Bảo dưỡng định kỳ", standardMinutes: 60, laborPrice: 350000 },
   { code: "DV-002", name: "Bảo dưỡng cấp 2 (20.000 km)", category: "Bảo dưỡng định kỳ", standardMinutes: 150, laborPrice: 900000 },
   { code: "DV-003", name: "Thay dầu động cơ + lọc dầu", category: "Bảo dưỡng định kỳ", standardMinutes: 45, laborPrice: 200000 },
@@ -14,7 +14,7 @@ const SEED_SERVICES = [
   { code: "DV-008", name: "Sơn dặm 1 tấm vỏ", category: "Đồng - Sơn", standardMinutes: 240, laborPrice: 1200000 },
 ];
 
-const SEED_PARTS = [
+export const SEED_PARTS = [
   { code: "PT-001", name: "Lọc dầu động cơ", category: "Lọc - Dầu nhớt", oemNumber: "90915-YZZE1", unit: "Cái", stock: 42, price: 180000, cost: 120000, minStock: 10, location: "Kệ A1" },
   { code: "PT-002", name: "Dầu nhớt 5W-30 (1L)", category: "Lọc - Dầu nhớt", oemNumber: "08880-83543", unit: "Lít", stock: 96, price: 220000, cost: 155000, minStock: 24, location: "Kệ A2" },
   { code: "PT-003", name: "Lọc gió động cơ", category: "Lọc - Dầu nhớt", oemNumber: "17801-0D060", unit: "Cái", stock: 18, price: 260000, cost: 175000, minStock: 6, location: "Kệ A3" },
@@ -24,7 +24,7 @@ const SEED_PARTS = [
   { code: "PT-007", name: "Nước làm mát (1L)", category: "Vật tư tiêu hao", oemNumber: null, unit: "Lít", stock: 30, price: 90000, cost: 55000, minStock: 10, location: "Kệ A4" },
 ];
 
-const SEED_EMPLOYEES = [
+export const SEED_EMPLOYEES = [
   { name: "Nguyễn Văn Hùng", position: "Quản đốc", specialty: "Máy - Hộp số", hourlyCost: 120000 },
   { name: "Trần Minh Khoa", position: "Kỹ thuật viên", specialty: "Máy - Hộp số", hourlyCost: 90000 },
   { name: "Lê Quốc Bảo", position: "Kỹ thuật viên", specialty: "Gầm - Treo - Phanh", hourlyCost: 90000 },
@@ -45,8 +45,26 @@ export async function ensureDefaultBranch() {
   return all[0].id;
 }
 
-// Idempotent: chỉ seed khi bảng tương ứng đang rỗng (DB mới tinh).
+// Idempotent, chạy ở mọi lần khởi động.
+//
+// Tách hai loại dữ liệu, vì chúng có hai số phận khác nhau:
+//   - CẤU HÌNH HỆ THỐNG (chi nhánh mặc định, quy tắc tự động): luôn đảm bảo tồn tại. Thiếu
+//     là app không chạy được đúng.
+//   - DỮ LIỆU MINH HOẠ (phụ tùng Toyota mẫu, bảng giá mẫu, 5 nhân sự tên giả): CHỈ khi
+//     `SEED_DEMO_DATA=true`. Trước 18/09/2026 chúng được seed mỗi khi bảng rỗng — nghĩa là
+//     người vận hành chạy `data:clean-demo` xoá 8 dịch vụ mẫu, bảng `services` rỗng, lần
+//     khởi động sau 8 dịch vụ mẫu quay lại. Dọn mãi không hết mà không hiểu vì sao.
 export async function seedInitialData() {
+  await ensureDefaultBranch();
+  await seedAutomationRules();
+
+  if (process.env.SEED_DEMO_DATA === "true") {
+    await seedDemoData();
+  }
+}
+
+// Dữ liệu minh hoạ cho máy dev / bản demo. Vẫn idempotent theo từng bảng.
+async function seedDemoData() {
   const branchId = await ensureDefaultBranch();
 
   const existingServices = await db.select({ id: services.id }).from(services).limit(1);
@@ -63,7 +81,9 @@ export async function seedInitialData() {
   if (existingEmployees.length === 0) {
     await db.insert(employees).values(SEED_EMPLOYEES.map((e) => ({ ...e, branchId })));
   }
+}
 
+async function seedAutomationRules() {
   const existingRules = await db.select({ id: automationRules.id }).from(automationRules).limit(1);
   if (existingRules.length === 0) {
     await db.insert(automationRules).values([

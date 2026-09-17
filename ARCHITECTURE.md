@@ -460,6 +460,7 @@ nằm ở chú thích ngay trong file được nhắc tới.
 |---|---|---|
 | `POST /api/auth/register` chỉ mở khi DB chưa có tài khoản, hoặc `ALLOW_PUBLIC_REGISTER=true` | Trước đây mở hoàn toàn: ai cũng tạo được tài khoản `staff`, mà 44/51 route chỉ cần `requireUser()`. Deploy là mất sạch dữ liệu. | `api/auth/register/route.ts` |
 | Bỏ `seedDemoUser()`, thay bằng `seedBootstrapAdmin()` đọc từ env | Bản cũ tạo admin `demo1234` ở mọi lần khởi động và tự nâng lại quyền — cửa hậu không đóng được. | `store/users.ts` |
+| Dữ liệu minh hoạ chỉ seed khi `SEED_DEMO_DATA=true` (18/09) | Trước đây seed mỗi khi bảng rỗng: dọn 8 dịch vụ mẫu xong, khởi động lại là chúng quay về. Chi nhánh mặc định + quy tắc tự động vẫn luôn seed (đó là cấu hình, không phải dữ liệu mẫu). Bộ kiểm tra và script dọn nhận diện dữ liệu mẫu bằng cả mã lẫn tên. | `store/seed.ts` |
 | Gỡ 3 cặp email/mật khẩu khỏi `login/page.tsx` | File client: mật khẩu đi vào bundle gửi cho mọi trình duyệt. Nay đọc `NEXT_PUBLIC_DEV_QUICK_ACCOUNTS`, chỉ ngoài production. | `login/page.tsx` |
 | `users.mustChangePassword` + chặn ở `requireUser()` + cờ `mcp` trong JWT cho `proxy.ts` | Mật khẩu tạm đi qua điện thoại/tin nhắn. Chặn ở API chứ không chỉ UI; nhét cờ vào token để proxy không phải hỏi DB mỗi request. | `session.ts`, `auth.ts`, `proxy.ts`, `/doi-mat-khau` |
 | Rate-limit đăng nhập bằng bảng `login_attempts` | Đếm trong RAM sai khi nhiều instance / serverless. 5 lần/email, 20 lần/IP, 15 phút. Kiểm tra TRƯỚC khi chạm bcrypt. | `loginThrottle.ts` |

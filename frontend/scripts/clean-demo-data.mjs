@@ -17,10 +17,22 @@ import { Pool } from "@neondatabase/serverless";
 
 const APPLY = process.argv.includes("--apply");
 
-// Đúng các mã mà `src/server/store/seed.ts` sinh ra. Không dò theo tên: tên có thể trùng
-// với hàng thật ("Lọc dầu động cơ" là mặt hàng có thật ở mọi gara).
-const DEMO_PART_CODES = ["PT-001", "PT-002", "PT-003", "PT-004", "PT-005", "PT-006", "PT-007"];
-const DEMO_SERVICE_CODES = ["DV-001", "DV-002", "DV-003", "DV-004", "DV-005", "DV-006", "DV-007", "DV-008"];
+// Đúng cặp (mã, tên) mà `src/server/store/seed.ts` sinh ra. Dò cả hai: chỉ theo mã thì một
+// hạng mục thật mà gara tự đặt "DV-001" cũng bị xoá; chỉ theo tên thì "Lọc dầu động cơ" là
+// mặt hàng có thật ở mọi gara. Khớp đồng thời cả hai mới đủ chắc là bản seed.
+const DEMO_PARTS = [
+  ["PT-001", "Lọc dầu động cơ"], ["PT-002", "Dầu nhớt 5W-30 (1L)"], ["PT-003", "Lọc gió động cơ"],
+  ["PT-004", "Má phanh trước (bộ)"], ["PT-005", "Ắc quy 12V-60Ah"], ["PT-006", "Lốp 205/55 R16"],
+  ["PT-007", "Nước làm mát (1L)"],
+];
+const DEMO_SERVICES = [
+  ["DV-001", "Bảo dưỡng cấp 1 (5.000 km)"], ["DV-002", "Bảo dưỡng cấp 2 (20.000 km)"],
+  ["DV-003", "Thay dầu động cơ + lọc dầu"], ["DV-004", "Kiểm tra - chẩn đoán bằng máy"],
+  ["DV-005", "Thay má phanh trước"], ["DV-006", "Cân bằng động - đảo lốp"],
+  ["DV-007", "Vệ sinh dàn lạnh - nạp ga điều hoà"], ["DV-008", "Sơn dặm 1 tấm vỏ"],
+];
+const DEMO_PART_CODES = DEMO_PARTS.map(([c]) => c);
+const DEMO_SERVICE_CODES = DEMO_SERVICES.map(([c]) => c);
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const q = async (sql, params = []) => (await pool.query(sql, params)).rows;
@@ -34,8 +46,8 @@ async function inspectParts() {
             (select count(*)::int from part_transactions t where t.part_id = p.id) as tx,
             (select count(*)::int from service_order_parts sp where sp.part_id = p.id) as lines
      from parts p join branches b on b.id = p.branch_id
-     where p.code = any($1::text[])`,
-    [DEMO_PART_CODES],
+     where p.code = any($1::text[]) and p.name = any($2::text[])`,
+    [DEMO_PART_CODES, DEMO_PARTS.map(([, n]) => n)],
   );
   for (const r of rows) {
     if (r.tx > 0 || r.lines > 0) {
@@ -52,8 +64,8 @@ async function inspectServices() {
   const rows = await q(
     `select s.id, s.code, s.name,
             (select count(*)::int from service_order_labors l where l.service_id = s.id) as lines
-     from services s where s.code = any($1::text[])`,
-    [DEMO_SERVICE_CODES],
+     from services s where s.code = any($1::text[]) and s.name = any($2::text[])`,
+    [DEMO_SERVICE_CODES, DEMO_SERVICES.map(([, n]) => n)],
   );
   for (const r of rows) {
     if (r.lines > 0) {

@@ -14,6 +14,7 @@ import { DEFAULT_LOW_STOCK_THRESHOLD } from "@/server/domain";
 import { isN8nApiConfigured, listN8nWorkflows } from "@/server/n8nApi";
 import { WORKFLOW_NAMES } from "@/server/store/automation";
 import { belowThresholdSql } from "@/server/store/parts";
+import { SEED_PARTS, SEED_SERVICES } from "@/server/store/seed";
 import { looksUnaccented } from "@/lib/vietnamese";
 
 // "Kiểm tra sẵn sàng vận hành" — trả lời một câu hỏi duy nhất: hệ thống này đã dùng được
@@ -39,11 +40,13 @@ export type ReadinessItem = {
   href?: string;
 };
 
-// Mã phụ tùng và dịch vụ do `seedInitialData()` tạo lúc DB còn rỗng. Chúng là dữ liệu
-// MINH HOẠ (lọc dầu Toyota, lốp 205/55 R16...), không phải hàng thật của gara — nằm lẫn
-// trong kho thật thì thủ kho sẽ xuất nhầm một mặt hàng không hề tồn tại trên kệ.
-const DEMO_PART_CODES = ["PT-001", "PT-002", "PT-003", "PT-004", "PT-005", "PT-006", "PT-007"];
-const DEMO_SERVICE_CODES = ["DV-001", "DV-002", "DV-003", "DV-004", "DV-005", "DV-006", "DV-007", "DV-008"];
+// Dữ liệu MINH HOẠ do `seedDemoData()` tạo (lọc dầu Toyota, lốp 205/55 R16...) — không phải
+// hàng thật của gara. Đối chiếu bằng CẢ mã LẪN tên đúng như bản seed: nếu chỉ dò theo mã,
+// ngày gara tự đặt "DV-001" cho một hạng mục thật, bộ kiểm tra sẽ đòi xoá nó.
+const DEMO_PART_CODES = SEED_PARTS.map((p) => p.code);
+const DEMO_PART_NAMES = SEED_PARTS.map((p) => p.name);
+const DEMO_SERVICE_CODES = SEED_SERVICES.map((s) => s.code);
+const DEMO_SERVICE_NAMES = SEED_SERVICES.map((s) => s.name);
 
 // Mật khẩu từng nằm CÔNG KHAI trong mã nguồn (trang đăng nhập + README + lịch sử git).
 //
@@ -76,8 +79,8 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       partsNoThreshold: sql<number>`(select count(*) from ${parts} where ${parts.minStock} is null)::int`,
       partsNoCost: sql<number>`(select count(*) from ${parts} where ${parts.cost} is null)::int`,
       lowStockRows: sql<number>`(select count(*) from ${parts} where ${belowThresholdSql(DEFAULT_LOW_STOCK_THRESHOLD)})::int`,
-      demoParts: sql<number>`(select count(*) from ${parts} where ${parts.code} in ${DEMO_PART_CODES})::int`,
-      demoServices: sql<number>`(select count(*) from ${services} where ${services.code} in ${DEMO_SERVICE_CODES})::int`,
+      demoParts: sql<number>`(select count(*) from ${parts} where ${parts.code} in ${DEMO_PART_CODES} and ${parts.name} in ${DEMO_PART_NAMES})::int`,
+      demoServices: sql<number>`(select count(*) from ${services} where ${services.code} in ${DEMO_SERVICE_CODES} and ${services.name} in ${DEMO_SERVICE_NAMES})::int`,
       testEmployees: sql<number>`(select count(*) from ${employees} where ${employees.name} ilike '%(test)%')::int`,
       branchesNoEmail: sql<number>`(select count(*) from ${branches} where ${branches.notificationEmail} is null)::int`,
       branchesNoSpecialty: sql<number>`(select count(*) from ${branches} where ${branches.specialty} is null)::int`,
