@@ -396,6 +396,11 @@ export default function AutomationPage() {
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.08] pt-3">
                   {!n8nConfigured ? (
                     <Badge tone="orange">Chưa kết nối n8n</Badge>
+                  ) : n8nError ? (
+                    // Không hỏi được n8n thì KHÔNG kết luận "chưa import" — bắt được khi thử
+                    // với Docker đang tắt: 9 quy tắc đều bị gắn nhãn đỏ dù 3 workflow đã
+                    // import từ tháng 8.
+                    <Badge tone="orange">n8n không phản hồi</Badge>
                   ) : linked ? (
                     <Badge tone={rule.n8nActive ? "emerald" : "zinc"}>
                       n8n: {rule.n8nActive ? "đang chạy" : "đang dừng"}
@@ -442,7 +447,7 @@ export default function AutomationPage() {
                   </div>
                 </div>
 
-                {!linked && rule.expectedWorkflowName && (
+                {!linked && !n8nError && n8nConfigured && rule.expectedWorkflowName && (
                   <p className="mt-2 text-[11px] text-zinc-600">
                     Chưa import workflow &ldquo;{rule.expectedWorkflowName}&rdquo; vào n8n — bấm
                     &ldquo;Xem mẫu n8n&rdquo; ở trên để xem/tải file JSON rồi import (n8n UI →

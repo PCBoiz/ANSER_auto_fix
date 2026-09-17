@@ -10,6 +10,20 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans-vi);
   --font-mono: var(--font-mono-vi);
+
+  /*
+   * Nâng hai bậc xám nhạt nhất của chữ phụ để đạt tương phản WCAG AA (4,5:1) trên nền tối.
+   *
+   * Lighthouse (17/09/2026) báo `text-zinc-500` mặc định (#71717b) chỉ đạt 4,07–4,27 trên
+   * các nền #030305/#0b0b0d của app, và text-zinc-600 còn thấp hơn. Chữ đó là ghi chú dưới
+   * ô nhập, phím tắt, thời gian — thứ người dùng lớn tuổi ở gara cần đọc được.
+   *
+   * Ghi đè token ở đây thay vì sửa 93 chỗ `text-zinc-500` rải trong 20 trang: một chỗ, và
+   * mọi trang thêm sau này tự đúng. #8b8b94 đạt 5,8–6,1:1 trên các nền đang dùng, vẫn rõ
+   * là "chữ phụ" so với zinc-400.
+   */
+  --color-zinc-500: #8b8b94;
+  --color-zinc-600: #6f6f78;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,4 +50,11 @@ body {
 
 .anser-orb {
   animation: anser-orb-float 12s ease-in-out infinite alternate;
+}
+
+/* Người bật "giảm chuyển động" trong hệ điều hành không nên thấy quả cầu trôi vô tận. */
+@media (prefers-reduced-motion: reduce) {
+  .anser-orb {
+    animation: none;
+  }
 }

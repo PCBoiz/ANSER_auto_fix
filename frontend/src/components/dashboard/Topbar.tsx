@@ -128,8 +128,18 @@ export default function Topbar() {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        // Đóng chuông/menu trước: bắt được khi thử bằng trình duyệt — Ctrl+K mở tìm kiếm
+        // nhưng panel chuông đang mở vẫn nằm đè lên danh sách kết quả.
+        setBellOpen(false);
+        setMenuOpen(false);
         inputRef.current?.focus();
         setSearchOpen(true);
+      }
+      // Escape đóng mọi panel đang mở — trước đây chỉ ô tìm kiếm xử lý Escape, chuông thì
+      // không, nên bấm Escape với chuông đang mở là không có gì xảy ra.
+      if (e.key === "Escape") {
+        setBellOpen(false);
+        setMenuOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -166,6 +176,7 @@ export default function Topbar() {
     const next = !bellOpen;
     setBellOpen(next);
     setMenuOpen(false);
+    setSearchOpen(false);
     if (next && unread > 0) {
       setUnread(0);
       // Đánh dấu đã xem ngay khi MỞ chuông, không đợi bấm từng dòng: gara có vài người dùng

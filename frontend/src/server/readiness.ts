@@ -11,6 +11,8 @@ import {
   users,
 } from "@/server/db/schema";
 import { DEFAULT_LOW_STOCK_THRESHOLD } from "@/server/domain";
+import { isN8nApiConfigured, listN8nWorkflows } from "@/server/n8nApi";
+import { WORKFLOW_NAMES } from "@/server/store/automation";
 import { belowThresholdSql } from "@/server/store/parts";
 
 // "Kiểm tra sẵn sàng vận hành" — trả lời một câu hỏi duy nhất: hệ thống này đã dùng được
@@ -104,7 +106,6 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       branchesNoEmail: sql<number>`(select count(*) from ${branches} where ${branches.notificationEmail} is null)::int`,
       branchesNoSpecialty: sql<number>`(select count(*) from ${branches} where ${branches.specialty} is null)::int`,
       rulesTotal: sql<number>`(select count(*) from ${automationRules})::int`,
-      rulesUnlinked: sql<number>`(select count(*) from ${automationRules} where ${automationRules.enabled} and ${automationRules.n8nWorkflowId} is null)::int`,
       // "Chưa từng chạy" = chưa có nhịp nào từ nguồn LỊCH (n8n/cron). Lần gọi thử bằng tay
       // không được tính — xem SCHEDULED_SOURCES trong automation/rules.ts.
       rulesNeverRan: sql<number>`(select count(*) from ${automationRules} where ${automationRules.enabled} and (${automationRules.lastRunAt} is null or ${automationRules.lastRunSource} not in ('schedule', 'n8n', 'cron')))::int`,
@@ -114,6 +115,28 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
 
   const [settings] = await db.select().from(companySettings).limit(1);
   const allBranches = await db.select().from(branches);
+  const enabledRules = await db
+    .select({ type: automationRules.type, name: automationRules.name })
+    .from(automationRules)
+    .where(sql`${automationRules.enabled}`);
+
+  // Hỏi THẲNG n8n xem workflow nào đã import, thay vì đọc cột `n8n_workflow_id` trong DB —
+  // cột đó chỉ được ghi khi bật/tắt qua app, nên 3 workflow import tay từ tháng 8 vẫn bị
+  // đếm là "chưa nối". Không gọi được n8n thì không kết luận gì, chỉ báo là không hỏi được.
+  let n8nReachable: boolean | null = null; // null = chưa cấu hình API
+  let missingWorkflows: string[] = [];
+  if (isN8nApiConfigured()) {
+    try {
+      const workflows = await listN8nWorkflows();
+      n8nReachable = true;
+      const names = new Set(workflows.map((w) => w.name));
+      missingWorkflows = enabledRules
+        .map((r) => WORKFLOW_NAMES[r.type as keyof typeof WORKFLOW_NAMES])
+        .filter((name): name is string => Boolean(name) && !names.has(name));
+    } catch {
+      n8nReachable = false;
+    }
+  }
   const allUsers = await db
     .select({ email: users.email, passwordHash: users.passwordHash, mustChangePassword: users.mustChangePassword })
     .from(users);
@@ -331,15 +354,25 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
     });
   }
 
-  if (counts.rulesUnlinked > 0) {
+  if (n8nReachable === false) {
+    items.push({
+      id: "n8n-unreachable",
+      severity: "warning",
+      group: "Tự động hoá",
+      title: "Không liên lạc được với n8n",
+      detail:
+        "Đã cấu hình N8N_API_URL nhưng n8n không phản hồi — thường là Docker chưa chạy. Mọi email tự động (nhắc khách, cảnh báo kho, báo cáo) đều không gửi cho tới khi n8n bật lại. Chuông thông báo trong app vẫn hoạt động.",
+      fix: "Chạy `docker compose up -d` trong thư mục frontend, đợi ~30 giây rồi tải lại trang này.",
+      href: "/dashboard/automation",
+    });
+  } else if (missingWorkflows.length > 0) {
     items.push({
       id: "rules-unlinked",
       severity: "warning",
       group: "Tự động hoá",
-      title: `${counts.rulesUnlinked} quy tắc đang bật nhưng chưa nối với workflow n8n`,
-      detail:
-        "Quy tắc hiện “Đang bật” trong app nhưng không có workflow nào thực thi — bật ở đây chỉ là ghi chú trong DB.",
-      fix: "Vào Tự động hoá → bấm “Dò workflow” để nối, hoặc import file JSON mẫu vào n8n trước.",
+      title: `${missingWorkflows.length} quy tắc đang bật nhưng chưa có workflow trong n8n`,
+      detail: `Thiếu: ${missingWorkflows.join("; ")}. Quy tắc bật trong app nhưng không có gì thực thi.`,
+      fix: "Import file JSON mẫu vào n8n (Tự động hoá → Xem mẫu n8n → Tải xuống). App tự nối theo tên workflow, không cần dán ID.",
       href: "/dashboard/automation",
     });
   }

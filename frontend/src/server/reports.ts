@@ -38,63 +38,61 @@ function startOfMonth(date = new Date()) {
 
 // Tổng hợp cho trang Tổng quan. Dùng chung với endpoint n8n để hai nơi không bao giờ
 // báo hai con số khác nhau cho cùng một chỉ số.
+//
+// MỘT round-trip cho 6 con số KPI, thay vì 6 truy vấn tuần tự như trước. Đo trước khi sửa
+// (ARCHITECTURE.md §10): ~3,4 giây ở lần tải đầu từ Việt Nam — mỗi truy vấn tới Neon là một
+// vòng WebSocket ~250–400ms, và chúng chạy nối đuôi nhau dù không phụ thuộc gì nhau. Hai
+// danh sách (tồn thấp, xe tới hạn) chạy song song với câu KPI, nên tổng còn 1 vòng thay vì 8.
 export async function getOverviewSummary(): Promise<OverviewSummary> {
   const todayStart = startOfDay();
   const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
   const monthStart = startOfMonth();
 
-  const [activeOrdersRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(serviceOrders)
-    .where(inArray(serviceOrders.status, ACTIVE_ORDER_STATUSES));
+  const kpiQuery = db
+    .select({
+      activeOrders: sql<number>`(
+        select count(*) from ${serviceOrders}
+        where ${inArray(serviceOrders.status, ACTIVE_ORDER_STATUSES)}
+      )::int`,
+      deliveredToday: sql<number>`(
+        select count(*) from ${serviceOrders}
+        where ${eq(serviceOrders.status, "delivered")}
+          and ${gte(serviceOrders.deliveredAt, todayStart)}
+          and ${lte(serviceOrders.deliveredAt, todayEnd)}
+      )::int`,
+      appointmentsToday: sql<number>`(
+        select count(*) from ${appointments}
+        where ${gte(appointments.scheduledAt, todayStart)}
+          and ${lte(appointments.scheduledAt, todayEnd)}
+          and ${inArray(appointments.status, ["pending", "confirmed"])}
+      )::int`,
+      vehicleCount: sql<number>`(select count(*) from ${vehicles})::int`,
+      revenueThisMonth: sql<number>`(
+        select coalesce(sum(${invoices.total}), 0) from ${invoices}
+        where ${gte(invoices.issuedAt, monthStart)}
+      )::int`,
+      unpaidAmount: sql<number>`(
+        select coalesce(sum(${invoices.total} - ${invoices.paidAmount}), 0) from ${invoices}
+        where ${inArray(invoices.status, ["unpaid", "partial"])}
+      )::int`,
+    })
+    .from(sql`(select 1) as _`);
 
-  const [deliveredTodayRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(serviceOrders)
-    .where(
-      and(
-        eq(serviceOrders.status, "delivered"),
-        gte(serviceOrders.deliveredAt, todayStart),
-        lte(serviceOrders.deliveredAt, todayEnd),
-      ),
-    );
-
-  const [appointmentsTodayRow] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(appointments)
-    .where(
-      and(
-        gte(appointments.scheduledAt, todayStart),
-        lte(appointments.scheduledAt, todayEnd),
-        inArray(appointments.status, ["pending", "confirmed"]),
-      ),
-    );
-
-  const [vehicleRow] = await db.select({ count: sql<number>`count(*)::int` }).from(vehicles);
-
-  const [revenueRow] = await db
-    .select({ total: sql<number>`coalesce(sum(${invoices.total}), 0)::int` })
-    .from(invoices)
-    .where(gte(invoices.issuedAt, monthStart));
-
-  const [unpaidRow] = await db
-    .select({ total: sql<number>`coalesce(sum(${invoices.total} - ${invoices.paidAmount}), 0)::int` })
-    .from(invoices)
-    .where(inArray(invoices.status, ["unpaid", "partial"]));
-
-  const [lowStockParts, dueForService] = await Promise.all([
-    listLowStockParts(),
+  const [[kpi], lowStockParts, dueForService] = await Promise.all([
+    kpiQuery,
+    // Trang chỉ hiện 10 dòng — không kéo cả 724 dòng tồn thấp về rồi cắt ở JS.
+    listLowStockParts({ limit: 10 }),
     listVehiclesDueForService(),
   ]);
 
   return {
-    activeOrders: activeOrdersRow?.count ?? 0,
-    deliveredToday: deliveredTodayRow?.count ?? 0,
-    appointmentsToday: appointmentsTodayRow?.count ?? 0,
-    vehicleCount: vehicleRow?.count ?? 0,
-    revenueThisMonth: revenueRow?.total ?? 0,
-    unpaidAmount: unpaidRow?.total ?? 0,
-    lowStockParts: lowStockParts.slice(0, 10),
+    activeOrders: kpi?.activeOrders ?? 0,
+    deliveredToday: kpi?.deliveredToday ?? 0,
+    appointmentsToday: kpi?.appointmentsToday ?? 0,
+    vehicleCount: kpi?.vehicleCount ?? 0,
+    revenueThisMonth: kpi?.revenueThisMonth ?? 0,
+    unpaidAmount: kpi?.unpaidAmount ?? 0,
+    lowStockParts,
     dueForService: dueForService.slice(0, 10),
   };
 }

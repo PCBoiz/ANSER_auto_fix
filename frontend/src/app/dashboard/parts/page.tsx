@@ -99,13 +99,25 @@ export default function PartsPage() {
   });
   const [txnOpen, setTxnOpen] = useState(false);
 
-  const load = useCallback(async (term: string) => {
+  // 50 dòng một trang, đọc từ server. Kho thật có 788 mã — tải cả về rồi lọc ở trình duyệt
+  // là ~150 KB JSON cho mỗi chữ gõ vào ô tìm, và bảng 788 dòng cuộn giật trên máy yếu.
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+
+  const load = useCallback(async (term: string, pageIndex: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/parts?search=${encodeURIComponent(term)}`);
+      const params = new URLSearchParams({
+        search: term,
+        limit: String(PAGE_SIZE),
+        offset: String(pageIndex * PAGE_SIZE),
+      });
+      const res = await fetch(`/api/parts?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message ?? "Không tải được kho.");
       setParts(data.parts);
+      setTotal(data.total);
       setBranches(data.branches);
       setSuggestedCode(data.suggestedCode);
       setError(null);
@@ -124,9 +136,18 @@ export default function PartsPage() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => load(search), 300);
+    const timer = setTimeout(() => load(search, page), 300);
     return () => clearTimeout(timer);
-  }, [search, load]);
+  }, [search, page, load]);
+
+  // Gõ tìm thì về trang đầu — làm trong handler, không dùng effect (effect sẽ gọi API thừa
+  // một lần với offset cũ).
+  function changeSearch(value: string) {
+    setSearch(value);
+    setPage(0);
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // Nạp lịch sử khi người dùng BẤM sang tab, không nạp trong effect theo dõi `tab`:
   // effect chạy sau render rồi setState lại gây thêm một vòng render thừa.
@@ -185,7 +206,7 @@ export default function PartsPage() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message ?? "Không lưu được.");
       closeModal();
-      await load(search);
+      await load(search, page);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
       setSaving(false);
@@ -202,7 +223,7 @@ export default function PartsPage() {
         throw new Error(data?.message ?? "Không xoá được.");
       }
       setDeleting(null);
-      await load(search);
+      await load(search, page);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
     } finally {
@@ -234,7 +255,7 @@ export default function PartsPage() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message ?? "Không tạo được phiếu.");
       setTxnOpen(false);
-      await load(search);
+      await load(search, page);
       if (tab === "history") await loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
@@ -297,7 +318,7 @@ export default function PartsPage() {
         {tab === "parts" && (
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeSearch(e.target.value)}
             placeholder="Tìm theo mã, tên hoặc mã OEM..."
             className="min-w-64 flex-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-zinc-500 outline-none focus:border-orange-500 sm:max-w-md sm:flex-none"
           />
@@ -326,8 +347,10 @@ export default function PartsPage() {
                 </thead>
                 <tbody>
                   {parts.map((p) => {
+                    // Cùng quy tắc với belowThresholdSql() ở server: null = ngưỡng chung 5,
+                    // 0 = cố ý không cảnh báo (vật tư đặt theo xe), n > 0 = ngưỡng riêng.
                     const threshold = p.minStock ?? 5;
-                    const low = p.stock <= threshold;
+                    const low = p.minStock === 0 ? false : p.stock <= threshold;
                     return (
                       <tr key={p.id} className="border-b border-white/[0.04] last:border-0">
                         <td className="px-5 py-3 font-mono text-xs text-zinc-400">{p.code}</td>
@@ -390,6 +413,29 @@ export default function PartsPage() {
                 </tbody>
               </table>
             </TableWrap>
+          )}
+          {total > PAGE_SIZE && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] px-5 py-3 text-sm">
+              <span className="text-zinc-500">
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} / {total} mã
+              </span>
+              <div className="flex gap-2">
+                <GhostButton
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0 || loading}
+                >
+                  Trang trước
+                </GhostButton>
+                <GhostButton
+                  type="button"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page + 1 >= totalPages || loading}
+                >
+                  Trang sau
+                </GhostButton>
+              </div>
+            </div>
           )}
         </Card>
       ) : (
