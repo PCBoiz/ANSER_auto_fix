@@ -92,10 +92,21 @@ export default function BulkPartsPage() {
   }, [load]);
 
   // Đổi bộ lọc thì quay về trang đầu — giữ nguyên trang 7 khi bộ lọc mới chỉ có 2 trang
-  // sẽ ra bảng rỗng trông như mất dữ liệu.
-  useEffect(() => {
+  // sẽ ra bảng rỗng trông như mất dữ liệu. Làm ngay trong handler chứ không dùng effect
+  // theo dõi bộ lọc: effect sẽ render một lượt với (bộ lọc mới, trang cũ) rồi mới sửa,
+  // tức là gọi API thừa một lần với offset sai.
+  function changeSearch(value: string) {
+    setSearch(value);
     setPage(0);
-  }, [search, branchId, filter]);
+  }
+  function changeBranch(value: string) {
+    setBranchId(value);
+    setPage(0);
+  }
+  function changeFilter(value: typeof filter) {
+    setFilter(value);
+    setPage(0);
+  }
 
   function setDraft(id: string, field: keyof Draft, value: string) {
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
@@ -212,13 +223,13 @@ export default function BulkPartsPage() {
           <TextField
             label="Tìm theo mã / tên / mã OEM"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeSearch(e.target.value)}
             placeholder="cửa trước, 90915..."
           />
           <SelectField
             label="Chi nhánh"
             value={branchId}
-            onChange={(e) => setBranchId(e.target.value)}
+            onChange={(e) => changeBranch(e.target.value)}
           >
             <option value="">Tất cả chi nhánh</option>
             {branches.map((b) => (
@@ -230,7 +241,7 @@ export default function BulkPartsPage() {
           <SelectField
             label="Lọc"
             value={filter}
-            onChange={(e) => setFilter(e.target.value as typeof filter)}
+            onChange={(e) => changeFilter(e.target.value as typeof filter)}
           >
             <option value="missingPrice">Chưa có giá bán</option>
             <option value="missingThreshold">Chưa có ngưỡng tồn</option>

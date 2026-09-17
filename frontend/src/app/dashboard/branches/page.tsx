@@ -68,8 +68,10 @@ export default function BranchesPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Branch | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // Tải lại sau khi lưu/xoá — gọi từ event handler. Không `setLoading(true)`: giữ nguyên
+  // bảng cũ trên màn hình tới khi có dữ liệu mới, nháy về "Đang tải..." sau mỗi lần bấm
+  // Lưu chỉ làm mất chỗ người dùng đang nhìn.
+  const reload = useCallback(async () => {
     try {
       const res = await fetch("/api/branches");
       const data = await res.json();
@@ -78,14 +80,30 @@ export default function BranchesPage() {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
-    } finally {
-      setLoading(false);
     }
   }, []);
 
+  // Lần tải đầu: cùng khuôn với trang Tài khoản/Nhân sự — setState chỉ nằm trong callback
+  // của promise, và bỏ kết quả nếu trang đã rời đi trước khi request xong.
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    fetch("/api/branches")
+      .then(async (res) => {
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data?.message ?? "Không tải được danh sách chi nhánh.");
+        setBranches(data.branches);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Lỗi không xác định.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function openCreate() {
     setForm(EMPTY_FORM);
@@ -128,7 +146,7 @@ export default function BranchesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message ?? "Không lưu được chi nhánh.");
       closeForm();
-      await load();
+      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
     } finally {
@@ -145,7 +163,7 @@ export default function BranchesPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.message ?? "Không xoá được chi nhánh.");
       setDeleting(null);
-      await load();
+      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
     } finally {
