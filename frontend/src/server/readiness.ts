@@ -14,6 +14,7 @@ import { DEFAULT_LOW_STOCK_THRESHOLD } from "@/server/domain";
 import { isN8nApiConfigured, listN8nWorkflows } from "@/server/n8nApi";
 import { WORKFLOW_NAMES } from "@/server/store/automation";
 import { belowThresholdSql } from "@/server/store/parts";
+import { looksUnaccented } from "@/lib/vietnamese";
 
 // "Kiểm tra sẵn sàng vận hành" — trả lời một câu hỏi duy nhất: hệ thống này đã dùng được
 // cho gara thật chưa, hay còn dữ liệu mẫu và cấu hình bỏ trống?
@@ -50,31 +51,6 @@ const DEMO_SERVICE_CODES = ["DV-001", "DV-002", "DV-003", "DV-004", "DV-005", "D
 // Mục đích ngược lại: dò xem tài khoản nào VẪN đang dùng chúng. Đổi email mà giữ mật khẩu cũ
 // thì vẫn là cửa mở; kiểm tra theo đuôi email "@anser.auto" không bắt được trường hợp đó.
 const LEAKED_PASSWORDS = ["demo1234", "aa660156", "f7820a49"];
-
-const VIETNAMESE_DIACRITICS =
-  /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-
-// Từ tiếng Việt hay gặp trong tên xưởng, viết KHÔNG dấu.
-const UNACCENTED_VI_WORDS = new Set([
-  "xuong", "son", "go", "han", "may", "dong", "sua", "chua", "xe", "oto",
-  "chi", "nhanh", "trung", "tam", "co", "khi", "gam", "dien",
-]);
-
-/**
- * Tên chi nhánh có vẻ bị mất dấu tiếng Việt hay không.
- *
- * Không thể chỉ kiểm tra "có dấu hay không": "Gara Ford" là tên đúng và không có dấu nào.
- * Điều kiện là KHÔNG có dấu nào VÀ có từ 2 từ tiếng Việt viết không dấu trở lên —
- * "Xuong son go han" khớp 4 từ, còn "Gara Ford" khớp 0.
- */
-export function looksUnaccented(name: string): boolean {
-  if (VIETNAMESE_DIACRITICS.test(name)) return false;
-  const hits = name
-    .toLowerCase()
-    .split(/[\s\-_.]+/)
-    .filter((w) => UNACCENTED_VI_WORDS.has(w));
-  return hits.length >= 2;
-}
 
 export type ReadinessReport = {
   checkedAt: Date;

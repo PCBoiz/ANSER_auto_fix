@@ -31,16 +31,23 @@ export const positiveQuantity = z.coerce
   .positive("Số lượng phải lớn hơn 0.")
   .max(1_000_000, "Số lượng vượt quá giới hạn cho phép.");
 
-/** Số nguyên không âm, cho phép bỏ trống (null = chưa biết, khác 0). */
+/**
+ * Số nguyên không âm, cho phép bỏ trống (null = chưa biết, khác 0).
+ *
+ * `z.null()` và `z.literal("")` đứng TRƯỚC nhánh số: union thử từng nhánh theo thứ tự, mà
+ * `z.coerce.number()` ép "" thành 0 thành công — nên nếu nhánh số đứng đầu, xoá trống ô
+ * "ngưỡng tồn" (ý là quay về ngưỡng chung) lại thành 0 (ý là cố ý không cảnh báo). Test
+ * `validation.test.ts` bắt được đúng lỗi này ở bản đầu.
+ */
 export const optionalNonNegativeInt = z
   .union(
     [
+      z.null(),
+      z.literal(""),
       z.coerce
         .number()
         .int("Phải là số nguyên.")
         .min(0, "Không được âm."),
-      z.null(),
-      z.literal(""),
     ],
     { message: "Phải là số nguyên từ 0 trở lên, hoặc để trống." },
   )

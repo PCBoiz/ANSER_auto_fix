@@ -1,0 +1,61 @@
+# Cổng chất lượng cho mọi push/PR. Bốn bước, đúng thứ tự rẻ -> đắt, bước nào đỏ là dừng.
+#
+# Không có bước nào cần DATABASE_URL: `next build` khởi tạo db lười (xem ARCHITECTURE.md §3),
+# test chỉ nhắm module thuần (xem vitest.config.ts). Nhờ vậy CI không cần bí mật nào — một
+# fork hay PR từ ngoài cũng chạy được, và không có cách nào rò rỉ chuỗi kết nối Neon qua log.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Build không đọc secret; đặt để `getJwtSecret()` không nổ nếu Next đụng tới
+          # lúc thu thập metadata với NODE_ENV=production.
+          JWT_SECRET: ci-only-not-a-real-secret-0000000000000000
+
+      # Mật khẩu đã gỡ khỏi trang đăng nhập ngày 17/09/2026 không được quay lại bundle
+      # trình duyệt qua bất kỳ đường nào. Quét chuỗi thay vì tin vào code review.
+      - name: Không có mật khẩu cũ trong bundle client
+        run: |
+          if grep -rIl "demo1234\|aa660156\|f7820a49" .next/static; then
+            echo "::error::Mật khẩu đã lộ xuất hiện lại trong .next/static"
+            exit 1
+          fi
+
+      - name: Audit phụ thuộc (chỉ critical/high)
+        run: npm audit --audit-level=high

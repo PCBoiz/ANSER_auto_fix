@@ -14,6 +14,7 @@ import {
   type ServiceOrderStatus,
 } from "@/server/domain";
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format";
+import { escapeHtml } from "@/lib/html";
 import { listUpcomingAppointments } from "@/server/store/appointments";
 import { listUnpaidInvoicesOlderThan } from "@/server/store/invoices";
 import { countLowStockParts, listLowStockParts } from "@/server/store/parts";
@@ -33,14 +34,8 @@ import { listOrdersAwaitingAcceptanceTooLong } from "@/server/store/serviceOrder
 // riêng. Quản lý xưởng nhận 4–5 email mỗi ngày từ cùng một hệ thống là công thức để tất cả
 // bị bỏ qua. Một bản tin buổi sáng, sắp theo mức cần xử lý, là thứ người ta thực sự đọc.
 
-/** Thoát ký tự HTML. Tên khách/ghi chú là dữ liệu người dùng nhập — không được chèn thô vào email. */
-function esc(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+// `esc` — xem lib/html.ts (module thuần, có test).
+const esc = escapeHtml;
 
 export type DigestSection = {
   key: string;

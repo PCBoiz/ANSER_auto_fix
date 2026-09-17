@@ -16,6 +16,7 @@ import {
   TableWrap,
 } from "@/components/ui/PageShell";
 import { BRANCH_SPECIALTIES } from "@/server/domain";
+import { looksUnaccented } from "@/lib/vietnamese";
 
 // Trang quản lý chi nhánh — trước đây API `/api/branches` đã có CRUD đầy đủ nhưng không
 // có trang nào gọi tới, nên sửa tên hay thêm xưởng phải gọi API bằng tay.
@@ -40,22 +41,6 @@ const EMPTY_FORM = {
   specialty: "",
   notificationEmail: "",
 };
-
-// Bộ dấu tiếng Việt — dùng để cảnh báo tên chi nhánh viết không dấu ngay tại chỗ nhập,
-// thay vì để người dùng phát hiện khi đã in ra phiếu giao khách.
-const HAS_DIACRITICS =
-  /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
-const UNACCENTED_VI_WORDS = new Set([
-  "xuong", "son", "go", "han", "may", "dong", "sua", "chua", "xe", "oto",
-  "chi", "nhanh", "trung", "tam", "co", "khi", "gam", "dien",
-]);
-
-function looksUnaccented(name: string) {
-  if (!name.trim() || HAS_DIACRITICS.test(name)) return false;
-  return (
-    name.toLowerCase().split(/[\s\-_.]+/).filter((w) => UNACCENTED_VI_WORDS.has(w)).length >= 2
-  );
-}
 
 export default function BranchesPage() {
   const [branches, setBranches] = useState<Branch[]>([]);

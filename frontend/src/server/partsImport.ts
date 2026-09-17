@@ -42,7 +42,7 @@ export type ImportPlan = {
   totalRows: number;
 };
 
-function normalizeHeader(value: string): string {
+export function normalizeHeader(value: string): string {
   return value
     .normalize("NFD")
     // Bỏ dấu tổ hợp (\u0300-\u036f) — "Mã" -> "Ma". Chữ "đ" không phải dấu tổ hợp nên
@@ -68,7 +68,7 @@ const COLUMN_ALIASES: Record<keyof Omit<ImportRow, "line">, string[]> = {
   openingStock: ["ton", "ton kho", "so luong", "ton dau", "sl", "quantity", "stock"],
 };
 
-function buildColumnMap(headerRow: string[]): Partial<Record<keyof Omit<ImportRow, "line">, number>> {
+export function buildColumnMap(headerRow: string[]): Partial<Record<keyof Omit<ImportRow, "line">, number>> {
   const map: Partial<Record<keyof Omit<ImportRow, "line">, number>> = {};
   const normalized = headerRow.map((h) => normalizeHeader(String(h ?? "")));
 
@@ -86,8 +86,27 @@ function buildColumnMap(headerRow: string[]): Partial<Record<keyof Omit<ImportRo
   return map;
 }
 
-/** Đọc số từ ô Excel: chấp nhận "1.250.000", "1,250,000", "1250000", số thật. */
-function parseNumber(value: unknown): number | null {
+/** Rút giá trị thô từ ô ExcelJS: ô công thức là `{ formula, result }`, ô định dạng là `{ richText }`. */
+function unwrapCell(value: unknown): unknown {
+  if (typeof value === "object" && value !== null) {
+    if ("result" in value) return (value as { result?: unknown }).result;
+    if ("richText" in value) {
+      return (value as { richText: Array<{ text: string }> }).richText.map((r) => r.text).join("");
+    }
+  }
+  return value;
+}
+
+/**
+ * Đọc số từ ô Excel: chấp nhận "1.250.000", "1,250,000", "1250000", số thật, và ô CÔNG THỨC.
+ *
+ * Cột giá trong file kế toán thường là công thức (=D2*1.08). ExcelJS trả về object
+ * `{ formula, result }` chứ không phải số — bản đầu của hàm này gọi `String(value)` ra
+ * "[object Object]" rồi thành null, tức là giá bị bỏ im lặng. Test `partsImport.test.ts`
+ * dựng file .xlsx thật có ô công thức để giữ không tái phát.
+ */
+export function parseNumber(rawValue: unknown): number | null {
+  const value = unwrapCell(rawValue);
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number") return Number.isFinite(value) ? Math.round(value) : null;
 
@@ -102,19 +121,15 @@ function parseNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function cellText(value: unknown): string | null {
+function cellText(rawValue: unknown): string | null {
+  const value = unwrapCell(rawValue);
   if (value === null || value === undefined) return null;
-  // Ô công thức của ExcelJS là object { formula, result }.
-  if (typeof value === "object" && value !== null && "result" in value) {
-    const result = (value as { result?: unknown }).result;
-    return result === null || result === undefined ? null : String(result).trim() || null;
-  }
   const text = String(value).trim();
   return text || null;
 }
 
 /** Tách file thành mảng dòng thô. Hỗ trợ .xlsx và .csv. */
-async function readSheet(buffer: Buffer, fileName: string): Promise<unknown[][]> {
+export async function readSheet(buffer: Buffer, fileName: string): Promise<unknown[][]> {
   const workbook = new ExcelJS.Workbook();
 
   if (fileName.toLowerCase().endsWith(".csv")) {
@@ -141,7 +156,7 @@ async function readSheet(buffer: Buffer, fileName: string): Promise<unknown[][]>
 }
 
 /** Tách một dòng CSV, tôn trọng dấu nháy kép bao quanh ô có chứa dấu phẩy. */
-function parseCsvLine(line: string): string[] {
+export function parseCsvLine(line: string): string[] {
   const out: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -167,32 +182,33 @@ function parseCsvLine(line: string): string[] {
   return out.map((v) => v.trim());
 }
 
+/** Kết quả đọc file, TRƯỚC khi đối chiếu với DB. Thuần — test được không cần Neon. */
+export type ParsedSheet = {
+  rows: ImportRow[];
+  issues: ImportIssue[];
+  duplicatesInFile: string[];
+};
+
 /**
- * Đọc file và đối chiếu với kho của một chi nhánh, trả về KẾ HOẠCH nhập.
+ * Bước 1 (thuần): mảng ô thô -> dòng có cấu trúc + danh sách lỗi.
  *
- * Không ghi gì vào DB — đây là bước xem trước. Người dùng phải nhìn thấy "sẽ tạo mới bao
- * nhiêu, cập nhật bao nhiêu, bỏ qua dòng nào vì sao" TRƯỚC khi đồng ý, vì một file sai
- * cột có thể tạo hàng trăm mã rác mà dọn lại rất lâu.
+ * Tách khỏi `planPartsImport` để test được với dữ liệu trong bộ nhớ: mọi quy tắc dễ sai
+ * (khớp cột theo tên không dấu, đọc "1.850.000", bắt trùng mã, thiếu tên, số âm) đều nằm
+ * ở đây, và không cái nào cần DB để kiểm tra.
  */
-export async function planPartsImport(
-  buffer: Buffer,
-  fileName: string,
-  branchId: string,
-): Promise<ImportPlan> {
-  const rows = await readSheet(buffer, fileName);
+export function parseImportRows(rows: unknown[][]): ParsedSheet {
   const issues: ImportIssue[] = [];
 
   if (rows.length < 2) {
-    return { toCreate: [], toUpdate: [], issues: [{ line: 0, message: "File không có dữ liệu." }], duplicatesInFile: [], totalRows: 0 };
+    return { rows: [], issues: [{ line: 0, message: "File không có dữ liệu." }], duplicatesInFile: [] };
   }
 
-  const header = (rows[0] as unknown[]).map((v) => String(cellText(v) ?? ""));
+  const header = rows[0].map((v) => String(cellText(v) ?? ""));
   const map = buildColumnMap(header);
 
   if (map.code === undefined || map.name === undefined) {
     return {
-      toCreate: [],
-      toUpdate: [],
+      rows: [],
       issues: [
         {
           line: 1,
@@ -200,7 +216,6 @@ export async function planPartsImport(
         },
       ],
       duplicatesInFile: [],
-      totalRows: 0,
     };
   }
 
@@ -209,7 +224,7 @@ export async function planPartsImport(
   const duplicatesInFile: string[] = [];
 
   for (let i = 1; i < rows.length; i += 1) {
-    const raw = rows[i] as unknown[];
+    const raw = rows[i];
     const line = i + 1; // 1-based, và dòng 1 là tiêu đề
 
     const at = (field: keyof Omit<ImportRow, "line">) => {
@@ -276,29 +291,40 @@ export async function planPartsImport(
     });
   }
 
-  // Một truy vấn cho toàn bộ mã trong file, thay vì một truy vấn mỗi dòng.
-  const codes = parsed.map((r) => r.code);
-  const existing = codes.length
-    ? await db
-        .select({ id: parts.id, code: parts.code, price: parts.price, cost: parts.cost, minStock: parts.minStock, name: parts.name })
-        .from(parts)
-        .where(and(eq(parts.branchId, branchId), inArray(parts.code, codes)))
-    : [];
-  const existingByCode = new Map(existing.map((e) => [e.code, e]));
+  return { rows: parsed, issues, duplicatesInFile };
+}
 
+/** Bản ghi đang có trong kho, đúng các cột cần để so sánh. */
+export type ExistingPart = {
+  id: string;
+  code: string;
+  name: string;
+  price: number;
+  cost: number | null;
+  minStock: number | null;
+};
+
+/**
+ * Bước 2 (thuần): chia dòng đã đọc thành "tạo mới" và "cập nhật", theo danh sách mã đang có.
+ *
+ * Chỉ coi là thay đổi khi file CÓ giá trị và giá trị đó khác cái đang lưu. Ô trống trong
+ * file nghĩa là "không nói gì", không phải "xoá đi" — file đợt sau thường chỉ điền vài cột.
+ */
+export function diffAgainstExisting(
+  rows: ImportRow[],
+  existing: ExistingPart[],
+): Pick<ImportPlan, "toCreate" | "toUpdate"> {
+  const existingByCode = new Map(existing.map((e) => [e.code, e]));
   const toCreate: ImportRow[] = [];
   const toUpdate: ImportPlan["toUpdate"] = [];
 
-  for (const row of parsed) {
+  for (const row of rows) {
     const match = existingByCode.get(row.code);
     if (!match) {
       toCreate.push(row);
       continue;
     }
 
-    // Chỉ coi là thay đổi khi file CÓ giá trị và giá trị đó khác cái đang lưu. Ô trống
-    // trong file nghĩa là "không nói gì", không phải "xoá đi" — file đợt sau thường chỉ
-    // điền vài cột.
     const changes: string[] = [];
     if (row.name && row.name !== match.name) changes.push(`tên: "${match.name}" → "${row.name}"`);
     if (row.price !== null && row.price !== match.price) {
@@ -314,7 +340,40 @@ export async function planPartsImport(
     if (changes.length > 0) toUpdate.push({ row, existingId: match.id, changes });
   }
 
-  return { toCreate, toUpdate, issues, duplicatesInFile, totalRows: parsed.length };
+  return { toCreate, toUpdate };
+}
+
+/**
+ * Đọc file và đối chiếu với kho của một chi nhánh, trả về KẾ HOẠCH nhập.
+ *
+ * Không ghi gì vào DB — đây là bước xem trước. Người dùng phải nhìn thấy "sẽ tạo mới bao
+ * nhiêu, cập nhật bao nhiêu, bỏ qua dòng nào vì sao" TRƯỚC khi đồng ý, vì một file sai
+ * cột có thể tạo hàng trăm mã rác mà dọn lại rất lâu.
+ *
+ * Đây là hàm DUY NHẤT trong bước lập kế hoạch chạm DB; hai bước thuần ở trên đã có test.
+ */
+export async function planPartsImport(
+  buffer: Buffer,
+  fileName: string,
+  branchId: string,
+): Promise<ImportPlan> {
+  const sheet = parseImportRows(await readSheet(buffer, fileName));
+
+  // Một truy vấn cho toàn bộ mã trong file, thay vì một truy vấn mỗi dòng.
+  const codes = sheet.rows.map((r) => r.code);
+  const existing: ExistingPart[] = codes.length
+    ? await db
+        .select({ id: parts.id, code: parts.code, price: parts.price, cost: parts.cost, minStock: parts.minStock, name: parts.name })
+        .from(parts)
+        .where(and(eq(parts.branchId, branchId), inArray(parts.code, codes)))
+    : [];
+
+  return {
+    ...diffAgainstExisting(sheet.rows, existing),
+    issues: sheet.issues,
+    duplicatesInFile: sheet.duplicatesInFile,
+    totalRows: sheet.rows.length,
+  };
 }
 
 export type ImportResult = { created: number; updated: number; openingTransactions: number };

@@ -449,7 +449,7 @@ chuông) đều đã làm trong đợt 17/09/2026 — xem mục 11. Còn lại:
 | Cột "tiền thuế được giảm" trong sổ | 213/232 chứng từ bán có tổng thấp hơn tiền hàng 0,6%/0,2% theo phương pháp trực tiếp. Hiện chỉ giải thích trong form; nếu cần khai thuế từ app thì phải có cột riêng thay vì suy ngược. |
 | Rate-limit cho các endpoint ghi khác | Mới có ở `/api/auth/login`. Import Excel (5 MB, parse ở server) là ứng viên tiếp theo. |
 | Xác nhận n8n tự chạy theo lịch thật | Cơ chế đã có (nhịp tim + nguồn chạy), nhưng tới lúc viết, Docker trên máy dev đang tắt nên chưa có lần nào ghi nhận nguồn `schedule`. Cần bật n8n, import lại 9 workflow, đợi qua một mốc giờ. |
-| Test tự động | Chưa có bộ test nào. Các phép kiểm tra trong đợt này đều chạy tay (curl, script Node, Chrome DevTools). Ứng viên đầu tiên: `vndToWords` (21 ca đã liệt kê trong commit bd66fc2), `belowThresholdSql`, `planPartsImport`. |
+| Test cho phần chạm DB | Đã có 84 test cho module thuần (xem §11.4). Phần đọc/ghi DB (`belowThresholdSql`, `loginThrottle`, `bulkUpdateParts`) vẫn chỉ kiểm tra bằng mô phỏng tay trên DB thật. Khi cần: Neon branch riêng cho CI + biến `DATABASE_URL` trong GitHub Secrets. |
 
 ## 11. Đợt rà soát 17/09/2026 — những gì đã đổi và vì sao
 
@@ -495,9 +495,25 @@ nằm ở chú thích ngay trong file được nhắc tới.
 
 ### 11.4 Cách đã kiểm tra
 
-Không có test tự động. Mỗi thay đổi được thử theo một trong các cách sau, ghi trong commit tương
-ứng: gọi API bằng curl với payload đúng hình dạng UI gửi; script Node chạy thẳng hàm (ví dụ 21
-ca `vndToWords`, lược đồ zod với `--experimental-strip-types`); mô phỏng SQL trên DB thật mà
-không ghi (ngưỡng tồn, bộ lọc ngày 12 tháng); và Chrome DevTools MCP mở trang thật để bấm, chụp,
-đọc console và chạy Lighthouse (bắt được 4 lỗi giao diện mà curl không thấy). Đo hiệu năng
-trước/sau trên cùng DB: Tổng quan ~8s → ~0,34s.
+**Test tự động** (`npm test`, vitest, 84 ca — bổ sung 18/09/2026): chỉ nhắm module THUẦN, tức
+không import `db` hay `next/*`, nên chạy không cần Neon và CI không cần bí mật nào. Gồm:
+`lib/vndWords` (22 ca đọc số), `lib/format` (múi giờ, ngày cho `<input type=date>`),
+`lib/html`, `lib/vietnamese`, `server/validation` + `ledgerSchemas` (kể cả hai bẫy zod đã
+ghi ở §11.2), và `server/partsImport` sau khi tách thành `parseImportRows` /
+`diffAgainstExisting` / `readSheet` — có dựng file .xlsx thật bằng ExcelJS với ô công thức
+và ô rich-text. Ngay lần chạy đầu, bộ test bắt được 2 lỗi thật chưa ai thấy: `optionalNonNegativeInt`
+ép `""` thành `0` (xoá trống ô ngưỡng tồn = "cố ý không cảnh báo" thay vì "về ngưỡng chung"),
+và `parseNumber` không đọc ô công thức Excel (giá thành `null` im lặng). Cả hai đã sửa tại gốc.
+
+Quy tắc khi thêm code: hàm có logic đáng test thì đặt ở module thuần (`lib/` hoặc tách khỏi
+hàm chạm DB như `partsImport.ts` đã làm), để test được mà không cần dựng Postgres giả.
+
+**CI** (`.github/workflows/ci.yml`): typecheck → lint → test → build → quét bundle client
+xem 3 mật khẩu đã gỡ có quay lại không → `npm audit --audit-level=high`. Không bước nào cần
+`DATABASE_URL`.
+
+**Kiểm tra tay** (đợt 17/09/2026, ghi trong từng commit): gọi API bằng curl với payload đúng
+hình dạng UI gửi; script Node chạy thẳng hàm; mô phỏng SQL trên DB thật mà không ghi (ngưỡng
+tồn, bộ lọc ngày 12 tháng); và Chrome DevTools MCP mở trang thật để bấm, chụp, đọc console và
+chạy Lighthouse (bắt được 4 lỗi giao diện mà curl không thấy). Đo hiệu năng trước/sau trên
+cùng DB: Tổng quan ~8s → ~0,34s.

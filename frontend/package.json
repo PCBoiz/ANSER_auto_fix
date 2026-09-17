@@ -16,7 +16,9 @@
     "db:backup": "node scripts/backup-db.mjs",
     "db:restore": "node scripts/restore-db.mjs",
     "typecheck": "tsc --noEmit",
-    "data:name-prices": "node scripts/extract-name-prices.mjs"
+    "data:name-prices": "node scripts/extract-name-prices.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
