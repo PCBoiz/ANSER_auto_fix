@@ -193,7 +193,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       detail:
         "Giá bán đang là 0đ. Xuất những phụ tùng này vào lệnh sửa chữa sẽ ra dòng 0đ, khách không bị tính tiền vật tư.",
       fix: "Mở Kho phụ tùng → Nhập giá hàng loạt, lọc “chưa có giá bán” rồi điền theo lô.",
-      href: "/dashboard/parts?missingPrice=1",
+      href: "/dashboard/parts/bulk",
     });
   }
 
@@ -287,7 +287,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       title: `Cảnh báo tồn kho sẽ liệt kê ${counts.lowStockRows} mặt hàng mỗi lần chạy`,
       detail: `${counts.partsNoThreshold} phụ tùng chưa đặt ngưỡng riêng nên dùng chung mức mặc định 5. Email dài như vậy sẽ bị bỏ qua ngay từ lần thứ hai.`,
       fix: "Đặt ngưỡng cho nhóm phụ tùng thật sự cần giữ tồn, và để 0 cho vật tư đặt theo xe. Kho phụ tùng → Đặt ngưỡng hàng loạt.",
-      href: "/dashboard/parts?missingThreshold=1",
+      href: "/dashboard/parts/bulk",
     });
   }
 

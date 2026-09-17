@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server";
-import { badRequest, conflict, forbidden, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { conflict, forbidden, handle, unauthorized } from "@/server/api";
+import { BRANCH_SPECIALTIES } from "@/server/domain";
 import { requireManager, requireUser } from "@/server/session";
+import { optionalEmail, optionalText, parseBody, requiredText } from "@/server/validation";
 import { createBranch, listBranches } from "@/server/store/branches";
+
+export const dynamic = "force-dynamic";
+
+const branchSchema = z.object({
+  name: requiredText("Tên chi nhánh", 120),
+  address: optionalText(300),
+  phone: optionalText(30),
+  // Chuỗi tự do không được: cả gợi ý xưởng lẫn bộ lọc đều so khớp đúng giá trị này.
+  specialty: z.union([z.enum(BRANCH_SPECIALTIES), z.literal(""), z.null()]).optional()
+    .transform((v) => (v === "" || v === undefined ? null : v)),
+  notificationEmail: optionalEmail,
+});
 
 export async function GET() {
   return handle(async () => {
@@ -15,11 +30,11 @@ export async function POST(request: Request) {
     if (!(await requireUser())) return unauthorized();
     if (!(await requireManager())) return forbidden("Chỉ quản lý trở lên mới tạo được chi nhánh.");
 
-    const { name, address, phone, notificationEmail } = await request.json().catch(() => ({}));
-    if (!name || typeof name !== "string") return badRequest("Thiếu tên chi nhánh.");
+    const parsed = await parseBody(request, branchSchema);
+    if (!parsed.ok) return parsed.response;
 
     try {
-      const branch = await createBranch({ name: name.trim(), address, phone, notificationEmail });
+      const branch = await createBranch(parsed.data);
       return NextResponse.json({ branch }, { status: 201 });
     } catch (error) {
       if (error instanceof Error && error.message.includes("đã tồn tại")) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { EditIcon, PlusIcon, TrashIcon } from "@/components/dashboard/icons";
 import { MoneyField, SelectField, TextAreaField, TextField } from "@/components/ui/Field";
 import Modal from "@/components/ui/Modal";
@@ -251,7 +252,19 @@ export default function PartsPage() {
         title="Kho phụ tùng"
         subtitle="Tồn kho độc lập theo chi nhánh. Mọi biến động đều qua phiếu nhập/xuất."
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/parts/bulk"
+              className="rounded-xl border border-white/[0.12] px-4 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06]"
+            >
+              Nhập giá hàng loạt
+            </Link>
+            <Link
+              href="/dashboard/parts/import"
+              className="rounded-xl border border-white/[0.12] px-4 py-2.5 text-sm font-semibold text-zinc-200 transition-colors hover:bg-white/[0.06]"
+            >
+              Nhập từ Excel
+            </Link>
             <GhostButton onClick={() => openTxn("import")} disabled={parts.length === 0}>
               Nhập kho
             </GhostButton>

@@ -114,6 +114,34 @@ export const TECHNICIAN_SPECIALTIES = [
   "Lốp - Cân chỉnh",
 ] as const;
 
+// Chuyên môn của XƯỞNG (khác `TECHNICIAN_SPECIALTIES` là chuyên môn của từng người).
+//
+// Gara thật có 1 xưởng máy/động cơ và 1 xưởng đồng-sơn. Trước đây hai xưởng chỉ khác
+// nhau ở TÊN, nên phần mềm không biết xưởng nào sơn được — mà đó chính là thứ quyết định
+// dòng công nào chạy ở đâu khi một xe tai nạn cần cả hai xưởng trong cùng một lệnh.
+export const BRANCH_SPECIALTIES = [
+  "Máy - Động cơ - Hộp số",
+  "Đồng - Sơn - Gò hàn",
+  "Gầm - Treo - Phanh",
+  "Điện - Điều hoà",
+  "Lốp - Cân chỉnh",
+  "Đa năng (làm mọi hạng mục)",
+] as const;
+export type BranchSpecialty = (typeof BRANCH_SPECIALTIES)[number];
+
+// Hạng mục dịch vụ nào thường thuộc chuyên môn nào — dùng để GỢI Ý xưởng lúc thêm dòng
+// công, không phải để ép. Gara nhỏ vẫn có ngày xưởng máy phải sơn dặm một tấm vỏ, chặn
+// cứng là bắt người dùng nói dối phần mềm để làm được việc.
+export const SERVICE_CATEGORY_TO_BRANCH_SPECIALTY: Record<string, BranchSpecialty> = {
+  "Bảo dưỡng định kỳ": "Máy - Động cơ - Hộp số",
+  "Sửa chữa máy": "Máy - Động cơ - Hộp số",
+  "Gầm - Lái - Phanh": "Gầm - Treo - Phanh",
+  "Điện - Điều hoà": "Điện - Điều hoà",
+  "Đồng - Sơn": "Đồng - Sơn - Gò hàn",
+  "Lốp - La-zăng": "Lốp - Cân chỉnh",
+  "Kiểm tra - Chẩn đoán": "Máy - Động cơ - Hộp số",
+};
+
 export const AUTOMATION_RULE_TYPES = [
   "low_stock_alert", // phụ tùng dưới ngưỡng
   "maintenance_reminder", // xe tới hạn bảo dưỡng (theo ngày hoặc km)

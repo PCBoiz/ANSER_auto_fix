@@ -7,10 +7,19 @@ export type Part = typeof parts.$inferSelect;
 
 export type PartListItem = Part & { branchName: string };
 
-export async function listParts(options?: {
+export type ListPartsOptions = {
   search?: string;
   branchId?: string;
-}): Promise<PartListItem[]> {
+  category?: string;
+  /** Chỉ lấy phụ tùng đang để giá bán = 0 — 781 mã nhập từ Excel đều rơi vào nhóm này. */
+  missingPrice?: boolean;
+  /** Chỉ lấy phụ tùng chưa đặt ngưỡng tồn riêng (`minStock` null). */
+  missingThreshold?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+function partConditions(options?: ListPartsOptions) {
   const conditions = [];
   const term = options?.search?.trim();
   if (term) {
@@ -23,8 +32,38 @@ export async function listParts(options?: {
     );
   }
   if (options?.branchId) conditions.push(eq(parts.branchId, options.branchId));
+  if (options?.category) conditions.push(eq(parts.category, options.category));
+  if (options?.missingPrice) conditions.push(eq(parts.price, 0));
+  if (options?.missingThreshold) conditions.push(sql`${parts.minStock} is null`);
+  return conditions;
+}
 
-  return db
+/** Đếm tổng số dòng KHỚP BỘ LỌC (không phân trang) — để UI biết còn bao nhiêu trang. */
+export async function countParts(options?: ListPartsOptions) {
+  const conditions = partConditions(options);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(parts)
+    .where(conditions.length ? and(...conditions) : undefined);
+  return row?.n ?? 0;
+}
+
+/**
+ * Mã phụ tùng kế tiếp theo quy ước "PT-###".
+ *
+ * Trước đây route `/api/parts` gọi `listParts()` lần thứ hai KHÔNG lọc, chỉ để lấy danh
+ * sách mã rồi suy ra số kế tiếp — tức là kéo cả 788 dòng (đầy đủ mọi cột, kèm join
+ * branches) qua mạng lần thứ hai ở mỗi lần mở trang Kho. Ở đây chỉ đọc đúng cột `code`.
+ */
+export async function listPartCodes(): Promise<string[]> {
+  const rows = await db.select({ code: parts.code }).from(parts);
+  return rows.map((r) => r.code);
+}
+
+export async function listParts(options?: ListPartsOptions): Promise<PartListItem[]> {
+  const conditions = partConditions(options);
+
+  const query = db
     .select({
       id: parts.id,
       code: parts.code,
@@ -45,7 +84,48 @@ export async function listParts(options?: {
     .from(parts)
     .innerJoin(branches, eq(parts.branchId, branches.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(asc(parts.code));
+    .orderBy(asc(parts.code))
+    .$dynamic();
+
+  // Không phân trang khi không yêu cầu: nhiều nơi trong app (báo cáo, gợi ý chọn phụ
+  // tùng) vẫn cần cả danh sách, và đổi hành vi mặc định sẽ làm chúng thiếu dữ liệu một
+  // cách âm thầm.
+  if (options?.limit !== undefined) query.limit(options.limit);
+  if (options?.offset !== undefined) query.offset(options.offset);
+
+  return query;
+}
+
+export type BulkPartPatch = { id: string; price?: number; minStock?: number | null };
+
+/**
+ * Cập nhật giá bán / ngưỡng tồn cho NHIỀU phụ tùng trong một transaction.
+ *
+ * 781 mã phải điền giá bằng tay là công việc nhiều buổi, làm dở là chuyện đương nhiên.
+ * Gộp mỗi lần lưu vào một transaction để một trang đã bấm "Lưu" thì hoặc vào hết, hoặc
+ * không vào gì — chứ không phải 40/60 dòng rồi không biết dòng nào đã xong.
+ *
+ * KHÔNG đụng tới `stock`: tồn kho chỉ được đổi qua phiếu nhập/xuất, để mọi biến động đều
+ * có dòng lịch sử đối chiếu (xem `createPart`).
+ */
+export async function bulkUpdateParts(patches: BulkPartPatch[]) {
+  if (patches.length === 0) return 0;
+
+  return db.transaction(async (tx) => {
+    let updated = 0;
+    for (const patch of patches) {
+      const set: Record<string, unknown> = { updatedAt: new Date() };
+      if (patch.price !== undefined) set.price = patch.price;
+      // `minStock` phân biệt rõ: `null` = dùng ngưỡng chung, `0` = cố ý không cảnh báo
+      // (vật tư đặt theo xe, tồn 0 là bình thường). Hai giá trị này khác nhau về nghĩa.
+      if (patch.minStock !== undefined) set.minStock = patch.minStock;
+      if (Object.keys(set).length === 1) continue;
+
+      const rows = await tx.update(parts).set(set).where(eq(parts.id, patch.id)).returning({ id: parts.id });
+      updated += rows.length;
+    }
+    return updated;
+  });
 }
 
 export async function getPartById(id: string): Promise<Part | undefined> {
