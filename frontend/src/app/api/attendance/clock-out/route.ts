@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, conflict, handle, unauthorized } from "@/server/api";
 import { requireEmployeeLink } from "@/server/session";
+import { optionalText, parseBody } from "@/server/validation";
 import { clockOut, NotClockedInError } from "@/server/store/attendance";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +13,10 @@ export async function POST(request: Request) {
     if (!link) return unauthorized();
     if (!link.employee) return badRequest("Tài khoản chưa liên kết hồ sơ nhân sự.");
 
-    const body = await request.json().catch(() => ({}));
-    const note = typeof body.note === "string" ? body.note.trim() || null : undefined;
+    // Body có thể rỗng (nút "Ra ca" không kèm ghi chú) — chấp nhận cả JSON rỗng.
+    const parsed = await parseBody(request, z.object({ note: optionalText(1000).optional() }).default({}));
+    if (!parsed.ok) return parsed.response;
+    const note = parsed.data.note;
 
     try {
       const log = await clockOut(link.employee.id, note);

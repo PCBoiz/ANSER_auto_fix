@@ -20,7 +20,7 @@ const patchSchema = z.object({
   phone: optionalText(30).optional(),
   email: optionalEmail.optional(),
   taxCode: optionalText(30).optional(),
-  currency: z.enum(["VND", "USD"]).optional(),
+  currency: z.enum(["VND", "USD"], { message: "Đơn vị tiền tệ phải là VND hoặc USD." }).optional(),
   defaultTaxRate: z.coerce
     .number({ message: "Thuế suất không hợp lệ." })
     .int("Thuế suất là số nguyên phần trăm.")

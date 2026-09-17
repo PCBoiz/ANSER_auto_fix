@@ -182,3 +182,20 @@ export function parseValue<S extends z.ZodTypeAny>(
 
   return { ok: false, response: badRequest(withField) };
 }
+
+/**
+ * Bỏ mọi khoá có giá trị `undefined` — biến kết quả của lược đồ PATCH thành đúng object
+ * "chỉ những trường có gửi" để đưa thẳng vào `db.update().set()`.
+ *
+ * Drizzle `.set({})` với toàn undefined sinh câu UPDATE rỗng và ném lỗi; và route cần biết
+ * "không có thay đổi nào" để trả 400 thay vì 500. Mọi route PATCH dùng hàm này thay vì viết
+ * tay 10 dòng `if ("x" in body) patch.x = ...` — 24 route từng viết tay như thế, mỗi cái một
+ * kiểu ép số, và đó là nơi các lỗi "0 thành null", "abc thành NaN" sinh ra.
+ */
+export function pickDefined<T extends object>(value: T): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (v !== undefined) out[key] = v;
+  }
+  return out as { [K in keyof T]?: Exclude<T[K], undefined> };
+}

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { badRequest, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { handle, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
+import { optionalEmail, optionalText, parseBody, requiredText } from "@/server/validation";
 import { createCustomer, listCustomers } from "@/server/store/customers";
 
 export const dynamic = "force-dynamic";
@@ -13,24 +15,24 @@ export async function GET(request: Request) {
   });
 }
 
+const createSchema = z.object({
+  name: requiredText("Tên khách hàng", 200),
+  type: z.enum(["individual", "company"], { message: "Loại khách hàng phải là cá nhân hoặc công ty." }).default("individual"),
+  phone: optionalText(30),
+  email: optionalEmail,
+  address: optionalText(300),
+  taxCode: optionalText(30),
+  note: optionalText(2000),
+});
+
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
 
-    const body = await request.json().catch(() => ({}));
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    if (!name) return badRequest("Thiếu tên khách hàng.");
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
 
-    const customer = await createCustomer({
-      name,
-      type: body.type === "company" ? "company" : "individual",
-      phone: body.phone?.trim() || null,
-      email: body.email?.trim() || null,
-      address: body.address?.trim() || null,
-      taxCode: body.taxCode?.trim() || null,
-      note: body.note?.trim() || null,
-    });
-
+    const customer = await createCustomer(parsed.data);
     return NextResponse.json({ customer }, { status: 201 });
   });
 }

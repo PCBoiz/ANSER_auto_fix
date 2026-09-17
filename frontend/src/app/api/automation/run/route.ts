@@ -8,7 +8,7 @@ import { parseBody } from "@/server/validation";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const schema = z.object({ job: z.enum(CRON_JOBS) });
+const schema = z.object({ job: z.enum(CRON_JOBS, { message: "Việc không hợp lệ." }) });
 
 // Nút "Chạy ngay" trên trang Tự động hoá — chạy bộ lập lịch nội bộ theo yêu cầu, để kiểm tra
 // bản tin mà không phải đợi tới 7 giờ sáng hôm sau. Ghi nguồn `manual`, nên KHÔNG được tính

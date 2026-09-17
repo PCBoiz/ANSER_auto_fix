@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { badRequest, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { handle, unauthorized } from "@/server/api";
 import { APPOINTMENT_STATUSES } from "@/server/domain";
 import { requireUser } from "@/server/session";
+import { dateField, optionalText, optionalUuid, parseBody, uuidField } from "@/server/validation";
 import { createAppointment, listAppointments } from "@/server/store/appointments";
 
 export const dynamic = "force-dynamic";
@@ -22,40 +24,33 @@ export async function GET(request: Request) {
   });
 }
 
+const createSchema = z
+  .object({
+    branchId: uuidField,
+    scheduledAt: dateField,
+    customerId: optionalUuid,
+    vehicleId: optionalUuid,
+    contactName: optionalText(200),
+    contactPhone: optionalText(30),
+    plateText: optionalText(20),
+    source: z.enum(["phone", "web", "walk_in", "reminder"], { message: "Nguồn lịch hẹn không hợp lệ." }).default("phone"),
+    requestNote: optionalText(2000),
+    status: z.enum(APPOINTMENT_STATUSES, { message: "Trạng thái không hợp lệ." }).default("pending"),
+  })
+  // Khách chưa có hồ sơ vẫn đặt lịch được, nhưng phải có ÍT NHẤT một cách liên hệ lại.
+  .refine((v) => v.customerId || v.contactName || v.contactPhone, {
+    message: "Cần chọn khách hàng hoặc nhập tên/số điện thoại liên hệ.",
+    path: ["contactPhone"],
+  });
+
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
-    const body = await request.json().catch(() => ({}));
 
-    if (!body.branchId) return badRequest("Thiếu chi nhánh.");
-    if (!body.scheduledAt) return badRequest("Thiếu thời gian hẹn.");
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
 
-    const scheduledAt = new Date(body.scheduledAt);
-    if (Number.isNaN(scheduledAt.getTime())) return badRequest("Thời gian hẹn không hợp lệ.");
-
-    // Phải có cách liên hệ lại: hẹn không có tên lẫn SĐT lẫn hồ sơ khách thì tới giờ không
-    // ai gọi được cho ai.
-    if (!body.customerId && !body.contactName?.trim() && !body.contactPhone?.trim()) {
-      return badRequest("Cần chọn khách hàng hoặc nhập tên/số điện thoại liên hệ.");
-    }
-
-    if (body.status && !APPOINTMENT_STATUSES.includes(body.status)) {
-      return badRequest("Trạng thái không hợp lệ.");
-    }
-
-    const appointment = await createAppointment({
-      branchId: body.branchId,
-      scheduledAt,
-      customerId: body.customerId || null,
-      vehicleId: body.vehicleId || null,
-      contactName: body.contactName?.trim() || null,
-      contactPhone: body.contactPhone?.trim() || null,
-      plateText: body.plateText?.trim() || null,
-      source: body.source || "phone",
-      requestNote: body.requestNote?.trim() || null,
-      status: body.status || "pending",
-    });
-
+    const appointment = await createAppointment(parsed.data);
     return NextResponse.json({ appointment }, { status: 201 });
   });
 }

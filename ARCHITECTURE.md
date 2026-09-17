@@ -444,7 +444,6 @@ chuông) đều đã làm trong đợt 17/09/2026 — xem mục 11. Còn lại:
 |---|---|
 | Dọn dữ liệu thật trước go-live | Là việc của người vận hành, không phải code: chạy `npm run data:clean-demo --apply`, đổi email + mật khẩu 3 tài khoản `@anser.auto`, điền thông tin doanh nghiệp, đặt tên có dấu cho "Xuong son go han", đặt ngưỡng tồn 0 cho vật tư đặt theo xe. Trang **Kiểm tra vận hành** liệt kê đúng những việc này và tự hết khi xong. |
 | 781 phụ tùng chưa có giá bán | Công cụ đã có (Nhập giá hàng loạt), số liệu thì chưa. Đuôi "G3.000" trong tên là **giá nhập**, không phải giá bán (đã đo: trung vị G/giá vốn = 1,00) — đừng điền từ đó. `npm run data:name-prices` đề xuất điền giá vốn cho 105 mã còn trống và gỡ đuôi giá khỏi 600 tên trước khi in hoá đơn. |
-| zod cho 24 route còn lại | Khách hàng, xe, dịch vụ, nhân sự, lịch hẹn, hoá đơn, chấm công vẫn validate thủ công. Mẫu và helper đã có (`validation.ts`); chú ý bẫy `.optional()` bọc ngoài cho lược đồ PATCH. |
 | Bảo hiểm chi trả một phần | Hoá đơn có `insuranceAmount` nhưng sổ bán hàng (nguồn thật: phần lớn khách là công ty bảo hiểm) không nối được với lệnh sửa chữa — dữ liệu gốc không có biển số. Khi gara bắt đầu lập lệnh trong app, cân nhắc thêm `salesLedger.invoiceId` để đối chiếu. |
 | Cột "tiền thuế được giảm" trong sổ | 213/232 chứng từ bán có tổng thấp hơn tiền hàng 0,6%/0,2% theo phương pháp trực tiếp. Hiện chỉ giải thích trong form; nếu cần khai thuế từ app thì phải có cột riêng thay vì suy ngược. |
 | Rate-limit cho các endpoint ghi khác | Mới có ở `/api/auth/login`. Import Excel (5 MB, parse ở server) là ứng viên tiếp theo. |
@@ -465,7 +464,7 @@ nằm ở chú thích ngay trong file được nhắc tới.
 | Gỡ 3 cặp email/mật khẩu khỏi `login/page.tsx` | File client: mật khẩu đi vào bundle gửi cho mọi trình duyệt. Nay đọc `NEXT_PUBLIC_DEV_QUICK_ACCOUNTS`, chỉ ngoài production. | `login/page.tsx` |
 | `users.mustChangePassword` + chặn ở `requireUser()` + cờ `mcp` trong JWT cho `proxy.ts` | Mật khẩu tạm đi qua điện thoại/tin nhắn. Chặn ở API chứ không chỉ UI; nhét cờ vào token để proxy không phải hỏi DB mỗi request. | `session.ts`, `auth.ts`, `proxy.ts`, `/doi-mat-khau` |
 | Rate-limit đăng nhập bằng bảng `login_attempts` | Đếm trong RAM sai khi nhiều instance / serverless. 5 lần/email, 20 lần/IP, 15 phút. Kiểm tra TRƯỚC khi chạm bcrypt. | `loginThrottle.ts` |
-| zod + `parseBody()` | `Number(x) \|\| 0` biến chữ thành 0đ, `.trim()` trên số là 500, không route nào chặn số âm. | `validation.ts` |
+| zod + `parseBody()` + `pickDefined()` cho **mọi** route có body (40/40, xong 18/09) | `Number(x) \|\| 0` biến chữ thành 0đ, `.trim()` trên số là 500, không route nào chặn số âm. Lược đồ PATCH luôn `.optional()` bọc ngoài rồi `pickDefined()`. | `validation.ts` |
 
 ### 11.2 Dữ liệu và sổ sách
 

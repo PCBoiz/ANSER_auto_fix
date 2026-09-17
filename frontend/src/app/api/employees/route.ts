@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
-import { badRequest, forbidden, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { forbidden, handle, unauthorized } from "@/server/api";
 import { requireManager, requireUser } from "@/server/session";
+import {
+  optionalDate,
+  optionalEmail,
+  optionalNonNegativeInt,
+  optionalText,
+  optionalUuid,
+  parseBody,
+  requiredText,
+} from "@/server/validation";
 import { createEmployee, listEmployees } from "@/server/store/employees";
 
 export const dynamic = "force-dynamic";
@@ -20,27 +30,29 @@ export async function GET(request: Request) {
   });
 }
 
+const createSchema = z.object({
+  name: requiredText("Tên nhân sự", 200),
+  position: optionalText(100),
+  specialty: optionalText(100),
+  // Đơn giá công VND/giờ — null = chưa khai, khác 0.
+  hourlyCost: optionalNonNegativeInt.optional(),
+  phone: optionalText(30),
+  email: optionalEmail,
+  hireDate: optionalDate,
+  branchId: optionalUuid,
+  note: optionalText(2000),
+});
+
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     if (!(await requireManager())) return forbidden("Chỉ quản lý trở lên mới thêm được nhân sự.");
 
-    const body = await request.json().catch(() => ({}));
-    const name = typeof body.name === "string" ? body.name.trim() : "";
-    if (!name) return badRequest("Thiếu tên nhân sự.");
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
 
-    const employee = await createEmployee({
-      name,
-      position: body.position?.trim() || null,
-      specialty: body.specialty?.trim() || null,
-      hourlyCost: body.hourlyCost ? Number(body.hourlyCost) : null,
-      phone: body.phone?.trim() || null,
-      email: body.email?.trim() || null,
-      hireDate: body.hireDate ? new Date(body.hireDate) : null,
-      branchId: body.branchId || null,
-      note: body.note?.trim() || null,
-    });
-
+    const employee = await createEmployee({ ...body, hourlyCost: body.hourlyCost ?? null });
     return NextResponse.json({ employee }, { status: 201 });
   });
 }

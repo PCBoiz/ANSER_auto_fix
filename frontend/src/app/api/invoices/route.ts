@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { badRequest, conflict, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { conflict, handle, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
+import { PAYMENT_METHODS } from "@/server/domain";
+import { optionalText, parseBody, uuidField, vndAmount } from "@/server/validation";
 import {
   createInvoice,
   InvoiceExistsError,
@@ -25,28 +28,31 @@ export async function GET(request: Request) {
   });
 }
 
+const createSchema = z.object({
+  serviceOrderId: uuidField,
+  // Không gửi -> lấy thuế suất mặc định trong Cài đặt (createInvoice).
+  taxRate: z.coerce
+    .number({ message: "Thuế suất không hợp lệ." })
+    .int("Thuế suất là số nguyên phần trăm.")
+    .min(0, "Thuế suất phải trong khoảng 0–100.")
+    .max(100, "Thuế suất phải trong khoảng 0–100.")
+    .optional(),
+  paidAmount: vndAmount.default(0),
+  paymentMethod: z.enum(PAYMENT_METHODS, { message: "Hình thức thanh toán không hợp lệ." }).nullable().default(null),
+  insuranceAmount: vndAmount.default(0),
+  insuranceProvider: optionalText(200),
+  note: optionalText(2000),
+});
+
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
-    const body = await request.json().catch(() => ({}));
 
-    if (!body.serviceOrderId) return badRequest("Thiếu lệnh sửa chữa.");
-
-    const taxRate = body.taxRate !== undefined ? Number(body.taxRate) : undefined;
-    if (taxRate !== undefined && (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100)) {
-      return badRequest("Thuế suất phải trong khoảng 0–100.");
-    }
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
 
     try {
-      const invoice = await createInvoice({
-        serviceOrderId: body.serviceOrderId,
-        taxRate,
-        paidAmount: body.paidAmount ? Number(body.paidAmount) : 0,
-        paymentMethod: body.paymentMethod || null,
-        insuranceAmount: body.insuranceAmount ? Number(body.insuranceAmount) : 0,
-        insuranceProvider: body.insuranceProvider?.trim() || null,
-        note: body.note?.trim() || null,
-      });
+      const invoice = await createInvoice(parsed.data);
       return NextResponse.json({ invoice }, { status: 201 });
     } catch (error) {
       if (error instanceof InvoiceExistsError) return conflict(error.message);

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, handle, notFound, unauthorized } from "@/server/api";
 import { APPOINTMENT_STATUSES } from "@/server/domain";
 import { requireUser } from "@/server/session";
+import { dateField, optionalText, optionalUuid, parseBody, pickDefined, uuidField } from "@/server/validation";
 import {
   deleteAppointment,
   getAppointmentById,
@@ -13,30 +15,26 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+const patchSchema = z.object({
+  status: z.enum(APPOINTMENT_STATUSES, { message: "Trạng thái không hợp lệ." }).optional(),
+  scheduledAt: dateField.optional(),
+  branchId: uuidField.optional(),
+  customerId: optionalUuid.optional(),
+  vehicleId: optionalUuid.optional(),
+  contactName: optionalText(200).optional(),
+  contactPhone: optionalText(30).optional(),
+  plateText: optionalText(20).optional(),
+  requestNote: optionalText(2000).optional(),
+});
+
 export async function PATCH(request: Request, { params }: Params) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
 
-    const patch: Partial<AppointmentInput> = {};
-    if ("status" in body) {
-      if (!APPOINTMENT_STATUSES.includes(body.status)) return badRequest("Trạng thái không hợp lệ.");
-      patch.status = body.status;
-    }
-    if ("scheduledAt" in body && body.scheduledAt) {
-      const scheduledAt = new Date(body.scheduledAt);
-      if (Number.isNaN(scheduledAt.getTime())) return badRequest("Thời gian hẹn không hợp lệ.");
-      patch.scheduledAt = scheduledAt;
-    }
-    if ("branchId" in body && body.branchId) patch.branchId = body.branchId;
-    if ("customerId" in body) patch.customerId = body.customerId || null;
-    if ("vehicleId" in body) patch.vehicleId = body.vehicleId || null;
-    if ("contactName" in body) patch.contactName = body.contactName?.trim() || null;
-    if ("contactPhone" in body) patch.contactPhone = body.contactPhone?.trim() || null;
-    if ("plateText" in body) patch.plateText = body.plateText?.trim() || null;
-    if ("requestNote" in body) patch.requestNote = body.requestNote?.trim() || null;
-
+    const parsed = await parseBody(request, patchSchema);
+    if (!parsed.ok) return parsed.response;
+    const patch: Partial<AppointmentInput> = pickDefined(parsed.data);
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     const appointment = await updateAppointment(id, patch);

@@ -79,3 +79,9 @@ export function formatMinutes(minutes: number | null | undefined) {
   if (m === 0) return `${h} giờ`;
   return `${h}g${String(m).padStart(2, "0")}`;
 }
+
+/** Chỉ cột `code` — cho gợi ý mã kế tiếp, không kéo cả bảng giá lần thứ hai. */
+export async function listServiceCodes(): Promise<string[]> {
+  const rows = await db.select({ code: services.code }).from(services);
+  return rows.map((r) => r.code);
+}

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, conflict, handle, notFound, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
+import { optionalText, parseBody, pickDefined, requiredText, vndAmount } from "@/server/validation";
 import {
   deleteService,
   DuplicateServiceCodeError,
@@ -13,24 +15,28 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+const patchSchema = z.object({
+  code: requiredText("Mã dịch vụ", 30).transform((v) => v.toUpperCase()).optional(),
+  name: requiredText("Tên hạng mục", 200).optional(),
+  category: requiredText("Nhóm dịch vụ", 100).optional(),
+  standardMinutes: z.coerce
+    .number({ message: "Giờ công định mức không hợp lệ." })
+    .int("Giờ công định mức tính bằng phút, số nguyên.")
+    .positive("Giờ công định mức phải lớn hơn 0.")
+    .optional(),
+  laborPrice: vndAmount.optional(),
+  description: optionalText(2000).optional(),
+  active: z.boolean().optional(),
+});
+
 export async function PATCH(request: Request, { params }: Params) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
 
-    const patch: Partial<ServiceInput> = {};
-    if (typeof body.code === "string" && body.code.trim()) patch.code = body.code.trim().toUpperCase();
-    if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
-    if (typeof body.category === "string" && body.category.trim()) patch.category = body.category.trim();
-    if ("description" in body) patch.description = body.description?.trim() || null;
-    if ("active" in body) patch.active = Boolean(body.active);
-    if ("laborPrice" in body) patch.laborPrice = Number(body.laborPrice) || 0;
-    if ("standardMinutes" in body) {
-      const minutes = Number(body.standardMinutes);
-      if (!Number.isFinite(minutes) || minutes <= 0) return badRequest("Giờ công định mức phải lớn hơn 0.");
-      patch.standardMinutes = minutes;
-    }
+    const parsed = await parseBody(request, patchSchema);
+    if (!parsed.ok) return parsed.response;
+    const patch: Partial<ServiceInput> = pickDefined(parsed.data);
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     try {

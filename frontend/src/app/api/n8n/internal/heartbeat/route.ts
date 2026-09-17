@@ -9,8 +9,8 @@ import { parseBody } from "@/server/validation";
 export const dynamic = "force-dynamic";
 
 const heartbeatSchema = z.object({
-  type: z.enum(AUTOMATION_RULE_TYPES),
-  status: z.enum(["ok", "error", "skipped"]),
+  type: z.enum(AUTOMATION_RULE_TYPES, { message: "Loại quy tắc không hợp lệ." }),
+  status: z.enum(["ok", "error", "skipped"], { message: "Trạng thái phải là ok, error hoặc skipped." }),
   summary: z.string().max(500).optional(),
 });
 

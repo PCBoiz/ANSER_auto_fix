@@ -13,7 +13,7 @@ const branchSchema = z.object({
   address: optionalText(300),
   phone: optionalText(30),
   // Chuỗi tự do không được: cả gợi ý xưởng lẫn bộ lọc đều so khớp đúng giá trị này.
-  specialty: z.union([z.enum(BRANCH_SPECIALTIES), z.literal(""), z.null()]).optional()
+  specialty: z.union([z.enum(BRANCH_SPECIALTIES), z.literal(""), z.null()], { message: "Chuyên môn không nằm trong danh sách." }).optional()
     .transform((v) => (v === "" || v === undefined ? null : v)),
   notificationEmail: optionalEmail,
 });

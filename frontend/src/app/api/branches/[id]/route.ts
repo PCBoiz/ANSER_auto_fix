@@ -21,7 +21,7 @@ const patchSchema = z.object({
   name: requiredText("Tên chi nhánh", 120).optional(),
   address: optionalText(300).optional(),
   phone: optionalText(30).optional(),
-  specialty: z.union([z.enum(BRANCH_SPECIALTIES), z.literal(""), z.null()]).optional(),
+  specialty: z.union([z.enum(BRANCH_SPECIALTIES), z.literal(""), z.null()], { message: "Chuyên môn không nằm trong danh sách." }).optional(),
   notificationEmail: optionalEmail.optional(),
 });
 

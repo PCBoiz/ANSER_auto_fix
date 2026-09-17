@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, conflict, forbidden, handle, notFound, unauthorized } from "@/server/api";
 import { requireManager, requireUser } from "@/server/session";
+import {
+  optionalDate,
+  optionalEmail,
+  optionalNonNegativeInt,
+  optionalText,
+  optionalUuid,
+  parseBody,
+  pickDefined,
+  requiredText,
+} from "@/server/validation";
 import {
   deleteEmployee,
   getEmployeeById,
@@ -11,26 +22,28 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+const patchSchema = z.object({
+  name: requiredText("Tên nhân sự", 200).optional(),
+  position: optionalText(100).optional(),
+  specialty: optionalText(100).optional(),
+  hourlyCost: optionalNonNegativeInt.optional(),
+  phone: optionalText(30).optional(),
+  email: optionalEmail.optional(),
+  hireDate: optionalDate.optional(),
+  branchId: optionalUuid.optional(),
+  active: z.boolean().optional(),
+  note: optionalText(2000).optional(),
+});
+
 export async function PATCH(request: Request, { params }: Params) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     if (!(await requireManager())) return forbidden("Chỉ quản lý trở lên mới sửa được nhân sự.");
 
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
-
-    const patch: Parameters<typeof updateEmployee>[1] = {};
-    if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
-    if ("position" in body) patch.position = body.position?.trim() || null;
-    if ("specialty" in body) patch.specialty = body.specialty?.trim() || null;
-    if ("phone" in body) patch.phone = body.phone?.trim() || null;
-    if ("email" in body) patch.email = body.email?.trim() || null;
-    if ("note" in body) patch.note = body.note?.trim() || null;
-    if ("branchId" in body) patch.branchId = body.branchId || null;
-    if ("active" in body) patch.active = Boolean(body.active);
-    if ("hourlyCost" in body) patch.hourlyCost = body.hourlyCost ? Number(body.hourlyCost) : null;
-    if ("hireDate" in body) patch.hireDate = body.hireDate ? new Date(body.hireDate) : null;
-
+    const parsed = await parseBody(request, patchSchema);
+    if (!parsed.ok) return parsed.response;
+    const patch = pickDefined(parsed.data);
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     const employee = await updateEmployee(id, patch);

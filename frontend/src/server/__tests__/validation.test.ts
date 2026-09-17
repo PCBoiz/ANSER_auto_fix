@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   dateField,
   emailField,
+  pickDefined,
   optionalNonNegativeInt,
   optionalText,
   optionalUuid,
@@ -135,5 +136,14 @@ describe("parseValue — thông báo lỗi trả về cho người dùng", () =>
       const body = r.response as unknown as { status: number };
       expect(body.status).toBe(400);
     }
+  });
+});
+
+describe("pickDefined — object cho db.update().set()", () => {
+  it("bỏ undefined, GIỮ null và 0 và false (chúng là giá trị có nghĩa)", () => {
+    expect(pickDefined({ a: undefined, b: null, c: 0, d: false, e: "" })).toEqual({ b: null, c: 0, d: false, e: "" });
+  });
+  it("object rỗng khi không có gì -> route trả 'Không có thay đổi nào'", () => {
+    expect(Object.keys(pickDefined({ a: undefined }))).toHaveLength(0);
   });
 });

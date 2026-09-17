@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, conflict, handle, notFound, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
+import {
+  optionalDate,
+  optionalNonNegativeInt,
+  optionalText,
+  optionalUuid,
+  parseBody,
+  pickDefined,
+  requiredText,
+} from "@/server/validation";
 import {
   deleteVehicle,
   DuplicatePlateError,
@@ -24,36 +34,36 @@ export async function GET(_request: Request, { params }: Params) {
   });
 }
 
+// Mọi trường `.optional()` bọc ngoài: không gửi = giữ nguyên (xem BẪY KHI DÙNG CHO PATCH
+// trong validation.ts).
+const patchSchema = z.object({
+  licensePlate: requiredText("Biển số", 20).optional(),
+  make: requiredText("Hãng xe", 50).optional(),
+  model: requiredText("Dòng xe", 50).optional(),
+  customerId: optionalUuid.optional(),
+  vin: optionalText(30).optional(),
+  year: z
+    .union([z.coerce.number().int().min(1950, "Năm sản xuất không hợp lệ.").max(new Date().getFullYear() + 1, "Năm sản xuất không hợp lệ."), z.null(), z.literal("")])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === "" || v === null ? null : v)),
+  color: optionalText(50).optional(),
+  engineNumber: optionalText(50).optional(),
+  fuelType: optionalText(20).optional(),
+  transmission: optionalText(20).optional(),
+  odometer: optionalNonNegativeInt.optional(),
+  nextServiceAt: optionalDate.optional(),
+  nextServiceOdometer: optionalNonNegativeInt.optional(),
+  note: optionalText(2000).optional(),
+});
+
 export async function PATCH(request: Request, { params }: Params) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
 
-    const patch: Partial<VehicleInput> = {};
-    if (typeof body.licensePlate === "string" && body.licensePlate.trim()) {
-      patch.licensePlate = body.licensePlate.trim();
-    }
-    if (typeof body.make === "string" && body.make.trim()) patch.make = body.make.trim();
-    if (typeof body.model === "string" && body.model.trim()) patch.model = body.model.trim();
-    if ("customerId" in body) patch.customerId = body.customerId || null;
-    if ("vin" in body) patch.vin = body.vin?.trim() || null;
-    if ("color" in body) patch.color = body.color?.trim() || null;
-    if ("engineNumber" in body) patch.engineNumber = body.engineNumber?.trim() || null;
-    if ("fuelType" in body) patch.fuelType = body.fuelType || null;
-    if ("transmission" in body) patch.transmission = body.transmission || null;
-    if ("note" in body) patch.note = body.note?.trim() || null;
-    if ("year" in body) patch.year = body.year ? Number(body.year) : null;
-    if ("odometer" in body) {
-      patch.odometer = body.odometer !== "" && body.odometer !== null ? Number(body.odometer) : null;
-    }
-    if ("nextServiceAt" in body) {
-      patch.nextServiceAt = body.nextServiceAt ? new Date(body.nextServiceAt) : null;
-    }
-    if ("nextServiceOdometer" in body) {
-      patch.nextServiceOdometer = body.nextServiceOdometer ? Number(body.nextServiceOdometer) : null;
-    }
-
+    const parsed = await parseBody(request, patchSchema);
+    if (!parsed.ok) return parsed.response;
+    const patch: Partial<VehicleInput> = pickDefined(parsed.data);
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     try {

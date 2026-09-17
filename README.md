@@ -89,7 +89,7 @@ Hoá đơn có bản in A4 kèm số tiền bằng chữ. Sổ bán hàng / mua 
 
 Nền tảng: 20 bảng Postgres, 41 index, auth JWT + phân quyền 3 cấp + rate-limit đăng nhập
 (bảng `login_attempts`), `proxy.ts` chặn `/dashboard` và ép đổi mật khẩu tạm, validate bằng
-zod ở 27/51 route, mã chứng từ sinh bằng Postgres sequence, 9 workflow n8n + endpoint nội bộ
+zod ở mọi route có body, mã chứng từ sinh bằng Postgres sequence, 9 workflow n8n + endpoint nội bộ
 có token + bộ lập lịch nội bộ không cần n8n.
 
 **Còn thiếu** — xem mục 10 của `ARCHITECTURE.md`.
