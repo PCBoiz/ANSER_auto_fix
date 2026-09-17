@@ -33,9 +33,17 @@ export const positiveQuantity = z.coerce
 
 /** Số nguyên không âm, cho phép bỏ trống (null = chưa biết, khác 0). */
 export const optionalNonNegativeInt = z
-  .union([z.coerce.number().int().min(0), z.null(), z.literal("")], {
-    message: "Phải là số nguyên từ 0 trở lên, hoặc để trống.",
-  })
+  .union(
+    [
+      z.coerce
+        .number()
+        .int("Phải là số nguyên.")
+        .min(0, "Không được âm."),
+      z.null(),
+      z.literal(""),
+    ],
+    { message: "Phải là số nguyên từ 0 trở lên, hoặc để trống." },
+  )
   .transform((v) => (v === "" || v === null ? null : (v as number)));
 
 /** Chuỗi bắt buộc, đã trim, không rỗng. */
@@ -45,6 +53,13 @@ export const requiredText = (label: string, max = 500) =>
     .trim()
     .min(1, `${label} không được để trống.`)
     .max(max, `${label} quá dài (tối đa ${max} ký tự).`);
+
+// BẪY KHI DÙNG CHO PATCH — áp cho optionalText / optionalEmail / optionalUuid:
+// các helper này biến "KHÔNG GỬI TRƯỜNG" thành `null`. Đúng cho lược đồ TẠO MỚI (không gửi =
+// để trống), nhưng trong lược đồ SỬA thì "không gửi" phải nghĩa là "giữ nguyên". Khi dùng
+// trong PATCH, luôn bọc thêm `.optional()` bên ngoài (hoặc dùng `.partial()` cho cả object):
+//     employeeId: optionalUuid.optional()   // không gửi -> undefined -> không đụng tới
+// Quên lớp này là xoá dữ liệu một cách im lặng mỗi lần sửa một trường khác.
 
 /** Chuỗi tuỳ chọn: "" và null đều quy về null, để DB không lưu chuỗi rỗng lẫn null. */
 export const optionalText = (max = 500) =>

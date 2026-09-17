@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, forbidden, handle, unauthorized } from "@/server/api";
 import { requireManager, requireUser } from "@/server/session";
 import { getCompanySettings, updateCompanySettings } from "@/server/store/settings";
+import { optionalEmail, optionalText, parseBody, requiredText, vndAmount } from "@/server/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -12,39 +14,44 @@ export async function GET() {
   });
 }
 
+const patchSchema = z.object({
+  name: requiredText("Tên doanh nghiệp", 200).optional(),
+  address: optionalText(300).optional(),
+  phone: optionalText(30).optional(),
+  email: optionalEmail.optional(),
+  taxCode: optionalText(30).optional(),
+  currency: z.enum(["VND", "USD"]).optional(),
+  defaultTaxRate: z.coerce
+    .number({ message: "Thuế suất không hợp lệ." })
+    .int("Thuế suất là số nguyên phần trăm.")
+    .min(0, "Thuế suất phải trong khoảng 0–100.")
+    .max(100, "Thuế suất phải trong khoảng 0–100.")
+    .optional(),
+  defaultLaborRate: vndAmount.optional(),
+  maintenanceIntervalDays: z.coerce
+    .number({ message: "Chu kỳ bảo dưỡng không hợp lệ." })
+    .int()
+    .positive("Chu kỳ bảo dưỡng phải lớn hơn 0.")
+    .optional(),
+  maintenanceIntervalKm: z.coerce
+    .number({ message: "Chu kỳ bảo dưỡng theo km không hợp lệ." })
+    .int()
+    .positive("Chu kỳ bảo dưỡng theo km phải lớn hơn 0.")
+    .optional(),
+});
+
 export async function PATCH(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     if (!(await requireManager())) return forbidden("Chỉ quản lý trở lên mới sửa được cài đặt.");
 
-    const body = await request.json().catch(() => ({}));
+    const parsed = await parseBody(request, patchSchema);
+    if (!parsed.ok) return parsed.response;
+
     const patch: Parameters<typeof updateCompanySettings>[0] = {};
-
-    if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
-    for (const field of ["address", "phone", "email", "taxCode"] as const) {
-      if (field in body) patch[field] = body[field]?.trim() || null;
+    for (const [key, value] of Object.entries(parsed.data)) {
+      if (value !== undefined) (patch as Record<string, unknown>)[key] = value;
     }
-    if (body.currency === "VND" || body.currency === "USD") patch.currency = body.currency;
-
-    if ("defaultTaxRate" in body) {
-      const rate = Number(body.defaultTaxRate);
-      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
-        return badRequest("Thuế suất phải trong khoảng 0–100.");
-      }
-      patch.defaultTaxRate = rate;
-    }
-    if ("defaultLaborRate" in body) patch.defaultLaborRate = Number(body.defaultLaborRate) || 0;
-    if ("maintenanceIntervalDays" in body) {
-      const days = Number(body.maintenanceIntervalDays);
-      if (!Number.isFinite(days) || days <= 0) return badRequest("Chu kỳ bảo dưỡng phải lớn hơn 0.");
-      patch.maintenanceIntervalDays = days;
-    }
-    if ("maintenanceIntervalKm" in body) {
-      const km = Number(body.maintenanceIntervalKm);
-      if (!Number.isFinite(km) || km <= 0) return badRequest("Chu kỳ bảo dưỡng theo km phải lớn hơn 0.");
-      patch.maintenanceIntervalKm = km;
-    }
-
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     return NextResponse.json({ settings: await updateCompanySettings(patch) });

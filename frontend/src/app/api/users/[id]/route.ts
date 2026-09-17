@@ -6,11 +6,12 @@ import { db } from "@/server/db/client";
 import { users } from "@/server/db/schema";
 import { badRequest, conflict, forbidden, handle, notFound, unauthorized } from "@/server/api";
 import { getSessionUser, requireAdmin, requireUser } from "@/server/session";
-import { optionalUuid, parseBody, passwordField } from "@/server/validation";
+import { emailField, optionalUuid, parseBody, passwordField } from "@/server/validation";
 import {
   ASSIGNABLE_ROLES,
   countAdmins,
   deleteUser,
+  findUserByEmail,
   findUserById,
   toPublicUser,
   updateUser,
@@ -22,10 +23,19 @@ type Params = { params: Promise<{ id: string }> };
 
 const patchSchema = z.object({
   role: z.enum(ASSIGNABLE_ROLES, { message: "Chỉ gán được vai trò staff hoặc manager qua đây." }).optional(),
-  employeeId: optionalUuid,
+  // `.optional()` BỌC NGOÀI là bắt buộc: `optionalUuid` tự biến "không gửi" thành `null`.
+  // Thiếu lớp này thì PATCH chỉ để đặt lại mật khẩu sẽ lặng lẽ GỠ liên kết nhân sự — tài
+  // khoản kế toán/KTV rơi về luồng "quản lý" và thấy đủ menu. (Lỗi có thật trong bản đầu
+  // của route này, đã chạy thử để xác nhận.)
+  employeeId: optionalUuid.optional(),
   // Đặt lại mật khẩu hộ nhân viên quên mật khẩu. Luôn kèm cờ bắt buộc đổi: quản trị viên
   // biết chuỗi này, nên nó chỉ được sống tới lần đăng nhập kế tiếp.
   newPassword: passwordField.optional(),
+  // Đổi email đăng nhập. Sinh ra cho đúng một tình huống go-live: `demo@anser.auto` là quản
+  // trị viên DUY NHẤT, không xoá được (chặn xoá admin cuối cùng) và giao diện cố ý không cấp
+  // được admin mới. Cách duy nhất để gỡ tài khoản demo là CHUYỂN nó thành tài khoản thật của
+  // chủ gara: đổi email + đặt lại mật khẩu (kèm bắt buộc đổi ở lần đăng nhập kế tiếp).
+  email: emailField.optional(),
 });
 
 // Đổi role (chỉ staff/manager — không thăng admin qua đây, xem ASSIGNABLE_ROLES),
@@ -72,6 +82,12 @@ export async function PATCH(request: Request, { params }: Params) {
         }
       }
       patch.employeeId = employeeId;
+    }
+
+    if (body.email !== undefined && body.email !== target.email) {
+      const taken = await findUserByEmail(body.email);
+      if (taken && taken.id !== id) return conflict("Email này đã được một tài khoản khác dùng.");
+      patch.email = body.email;
     }
 
     if (body.newPassword) {

@@ -63,6 +63,7 @@ export async function updateUser(
   patch: Partial<{
     firstName: string;
     lastName: string;
+    email: string;
     phone: string | null;
     passwordHash: string;
     role: Role;
@@ -70,7 +71,8 @@ export async function updateUser(
     mustChangePassword: boolean;
   }>,
 ): Promise<User | undefined> {
-  const rows = await db.update(users).set(patch).where(eq(users.id, id)).returning();
+  const normalized = patch.email ? { ...patch, email: patch.email.toLowerCase() } : patch;
+  const rows = await db.update(users).set(normalized).where(eq(users.id, id)).returning();
   return rows[0];
 }
 

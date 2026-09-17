@@ -37,6 +37,13 @@ export class OrderLockedError extends Error {
   }
 }
 
+export class OrderNotFoundError extends Error {
+  constructor() {
+    super("Không tìm thấy lệnh sửa chữa.");
+    this.name = "OrderNotFoundError";
+  }
+}
+
 export class CrossBranchError extends Error {
   constructor() {
     super("Phụ tùng thuộc chi nhánh khác với chi nhánh của lệnh sửa chữa.");
@@ -401,7 +408,7 @@ async function assertUnlocked(tx: Tx, orderId: string) {
     .from(serviceOrders)
     .where(eq(serviceOrders.id, orderId))
     .limit(1);
-  if (!order) throw new Error("Không tìm thấy lệnh sửa chữa.");
+  if (!order) throw new OrderNotFoundError();
   if (LOCKED_STATUSES.includes(order.status as ServiceOrderStatus)) throw new OrderLockedError();
   return order;
 }

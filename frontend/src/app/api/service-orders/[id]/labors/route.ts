@@ -1,35 +1,55 @@
 import { NextResponse } from "next/server";
-import { badRequest, conflict, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { badRequest, conflict, handle, notFound, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
 import { getServiceById } from "@/server/store/services";
-import { addLabor, OrderLockedError } from "@/server/store/serviceOrders";
+import { addLabor, OrderLockedError, OrderNotFoundError } from "@/server/store/serviceOrders";
+import {
+  optionalNonNegativeInt,
+  optionalText,
+  optionalUuid,
+  parseBody,
+  positiveQuantity,
+  vndAmount,
+} from "@/server/validation";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
+const createSchema = z.object({
+  serviceId: optionalUuid,
+  name: z.string().trim().max(300).optional(),
+  // `.optional()` bọc ngoài — khác `serviceId`: không gửi `branchId` nghĩa là "để addLabor()
+  // tự điền xưởng tiếp nhận", còn gửi "" là cố tình để trống. Ba trạng thái, không phải hai.
+  branchId: optionalUuid.optional(),
+  technicianId: optionalUuid,
+  unitPrice: vndAmount.optional(),
+  quantity: positiveQuantity.default(1),
+  standardMinutes: optionalNonNegativeInt.optional(),
+  note: optionalText(1000),
+});
+
 export async function POST(request: Request, { params }: Params) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
 
-    const quantity = Number(body.quantity ?? 1);
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      return badRequest("Số lượng phải là số nguyên lớn hơn 0.");
-    }
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
 
     // Chọn từ bảng giá thì lấy tên/giá/định mức từ đó và SNAPSHOT vào dòng công — sửa
     // bảng giá sau này không được làm đổi lệnh đã lập.
-    let name = typeof body.name === "string" ? body.name.trim() : "";
-    let unitPrice = Number(body.unitPrice) || 0;
-    let standardMinutes: number | null = body.standardMinutes ? Number(body.standardMinutes) : null;
+    let name = body.name ?? "";
+    let unitPrice = body.unitPrice ?? 0;
+    let standardMinutes = body.standardMinutes ?? null;
 
     if (body.serviceId) {
       const service = await getServiceById(body.serviceId);
       if (!service) return badRequest("Không tìm thấy hạng mục dịch vụ.");
       name = name || service.name;
-      if (!("unitPrice" in body)) unitPrice = service.laborPrice;
+      if (body.unitPrice === undefined) unitPrice = service.laborPrice;
       standardMinutes = standardMinutes ?? service.standardMinutes;
     }
 
@@ -37,20 +57,19 @@ export async function POST(request: Request, { params }: Params) {
 
     try {
       const labor = await addLabor(id, {
-        serviceId: body.serviceId || null,
+        serviceId: body.serviceId,
         name,
-        // Không truyền -> addLabor() tự điền bằng xưởng tiếp nhận của lệnh. Truyền rỗng
-        // ("") nghĩa là cố tình để trống, không phải "chưa chọn" — phân biệt bằng `in`.
-        branchId: "branchId" in body ? body.branchId || null : undefined,
-        technicianId: body.technicianId || null,
+        branchId: body.branchId,
+        technicianId: body.technicianId,
         unitPrice,
-        quantity,
+        quantity: body.quantity,
         standardMinutes,
-        note: body.note?.trim() || null,
+        note: body.note,
       });
       return NextResponse.json({ labor }, { status: 201 });
     } catch (error) {
       if (error instanceof OrderLockedError) return conflict(error.message);
+      if (error instanceof OrderNotFoundError) return notFound(error.message);
       throw error;
     }
   });

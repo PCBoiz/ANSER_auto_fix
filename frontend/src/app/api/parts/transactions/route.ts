@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { badRequest, conflict, handle, unauthorized } from "@/server/api";
+import { z } from "zod";
+import { conflict, handle, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
 import {
   createPartTransaction,
   InsufficientStockError,
   listPartTransactions,
 } from "@/server/store/parts";
+import { optionalNonNegativeInt, optionalText, parseBody, positiveQuantity, uuidField } from "@/server/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -22,29 +24,33 @@ export async function GET(request: Request) {
   });
 }
 
+const createSchema = z.object({
+  partId: uuidField,
+  type: z.enum(["import", "export"], { message: "Loại phiếu phải là nhập hoặc xuất." }),
+  quantity: positiveQuantity,
+  // null = không ghi giá lô này (khác 0 = nhập miễn phí). Chỉ phiếu NHẬP có giá mới cập nhật
+  // giá vốn hiện hành của phụ tùng.
+  unitCost: optionalNonNegativeInt.optional(),
+  counterparty: optionalText(200),
+  note: optionalText(1000),
+});
+
 export async function POST(request: Request) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
-    const body = await request.json().catch(() => ({}));
 
-    if (body.type !== "import" && body.type !== "export") {
-      return badRequest("Loại phiếu phải là nhập hoặc xuất.");
-    }
-    if (!body.partId) return badRequest("Thiếu phụ tùng.");
-
-    const quantity = Number(body.quantity);
-    if (!Number.isInteger(quantity) || quantity <= 0) {
-      return badRequest("Số lượng phải là số nguyên lớn hơn 0.");
-    }
+    const parsed = await parseBody(request, createSchema);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.data;
 
     try {
       const transaction = await createPartTransaction({
         partId: body.partId,
         type: body.type,
-        quantity,
-        unitCost: body.unitCost ? Number(body.unitCost) : null,
-        counterparty: body.counterparty?.trim() || null,
-        note: body.note?.trim() || null,
+        quantity: body.quantity,
+        unitCost: body.unitCost ?? null,
+        counterparty: body.counterparty,
+        note: body.note,
       });
       return NextResponse.json({ transaction }, { status: 201 });
     } catch (error) {

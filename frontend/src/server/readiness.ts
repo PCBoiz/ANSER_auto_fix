@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import { sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
@@ -40,6 +41,13 @@ export type ReadinessItem = {
 // trong kho thật thì thủ kho sẽ xuất nhầm một mặt hàng không hề tồn tại trên kệ.
 const DEMO_PART_CODES = ["PT-001", "PT-002", "PT-003", "PT-004", "PT-005", "PT-006", "PT-007"];
 const DEMO_SERVICE_CODES = ["DV-001", "DV-002", "DV-003", "DV-004", "DV-005", "DV-006", "DV-007", "DV-008"];
+
+// Mật khẩu từng nằm CÔNG KHAI trong mã nguồn (trang đăng nhập + README + lịch sử git).
+//
+// Liệt kê lại ở đây không làm lộ thêm gì — chúng đã nằm vĩnh viễn trong lịch sử git của repo.
+// Mục đích ngược lại: dò xem tài khoản nào VẪN đang dùng chúng. Đổi email mà giữ mật khẩu cũ
+// thì vẫn là cửa mở; kiểm tra theo đuôi email "@anser.auto" không bắt được trường hợp đó.
+const LEAKED_PASSWORDS = ["demo1234", "aa660156", "f7820a49"];
 
 const VIETNAMESE_DIACRITICS =
   /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
@@ -106,6 +114,23 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
 
   const [settings] = await db.select().from(companySettings).limit(1);
   const allBranches = await db.select().from(branches);
+  const allUsers = await db
+    .select({ email: users.email, passwordHash: users.passwordHash, mustChangePassword: users.mustChangePassword })
+    .from(users);
+
+  // bcrypt cố ý chậm (~70ms mỗi lần so) — gara có vài tài khoản nên vài trăm ms là chấp nhận
+  // được cho một trang mở vài lần mỗi tuần. Tài khoản đang bị bắt đổi mật khẩu thì bỏ qua:
+  // họ không vào được dữ liệu cho tới khi đổi xong.
+  const leakedAccounts: string[] = [];
+  for (const u of allUsers) {
+    if (u.mustChangePassword) continue;
+    for (const leaked of LEAKED_PASSWORDS) {
+      if (await bcrypt.compare(leaked, u.passwordHash)) {
+        leakedAccounts.push(u.email);
+        break;
+      }
+    }
+  }
 
   // --- Bảo mật ---
 
@@ -132,15 +157,26 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
     });
   }
 
+  if (leakedAccounts.length > 0) {
+    items.push({
+      id: "leaked-passwords",
+      severity: "blocker",
+      group: "Bảo mật",
+      title: `${leakedAccounts.length} tài khoản vẫn dùng mật khẩu đã lộ`,
+      detail: `${leakedAccounts.join(", ")} — mật khẩu của các tài khoản này từng nằm công khai trong mã nguồn và lịch sử git. Ai đọc được repo đều đăng nhập được.`,
+      fix: "Vào Tài khoản → Đặt lại mật khẩu (hệ thống bắt đổi tiếp ở lần đăng nhập sau). Tài khoản demo là admin duy nhất thì đổi luôn email sang email thật của chủ gara.",
+      href: "/dashboard/accounts",
+    });
+  }
+
   if (counts.demoDomainUsers > 0) {
     items.push({
       id: "demo-accounts",
-      severity: "blocker",
+      severity: "warning",
       group: "Bảo mật",
       title: `Còn ${counts.demoDomainUsers} tài khoản dùng email mẫu @anser.auto`,
-      detail:
-        "Mật khẩu của các tài khoản này từng nằm công khai trong mã nguồn và trong lịch sử git, nên phải coi như đã lộ.",
-      fix: "Vào trang Tài khoản: đặt lại mật khẩu (hệ thống sẽ bắt đổi ở lần đăng nhập đầu) hoặc xoá hẳn nếu không dùng.",
+      detail: "Tên miền anser.auto không phải email thật của ai — thư đặt lại mật khẩu hay thông báo gửi tới đó đều mất.",
+      fix: "Vào Tài khoản → Sửa → đổi sang email thật của người dùng, hoặc xoá nếu không dùng.",
       href: "/dashboard/accounts",
     });
   }

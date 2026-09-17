@@ -6,6 +6,7 @@ import Modal from "@/components/ui/Modal";
 import {
   Badge,
   Card,
+  DangerButton,
   EmptyState,
   ErrorBanner,
   GhostButton,
@@ -26,7 +27,18 @@ type Account = {
   employeeId: string | null;
   employeeName: string | null;
   employeePosition: string | null;
+  mustChangePassword: boolean;
 };
+
+// Mật khẩu tạm gợi ý: 12 ký tự từ bảng chữ không gây nhầm khi đọc qua điện thoại (bỏ 0/O,
+// 1/l/I). Dùng crypto của trình duyệt, không dùng Math.random — mật khẩu đoán được thì
+// cờ "bắt buộc đổi" cũng chỉ bảo vệ tới lúc kẻ khác đăng nhập trước.
+function suggestTempPassword() {
+  const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint32Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
 
 type Employee = { id: string; name: string; position: string | null };
 
@@ -37,7 +49,16 @@ export default function AccountsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
-  const [form, setForm] = useState({ role: "staff", employeeId: "" });
+  const [form, setForm] = useState({ role: "staff", employeeId: "", email: "" });
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [resetting, setResetting] = useState<Account | null>(null);
+  const [tempPassword, setTempPassword] = useState("");
+  const [resetDone, setResetDone] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const [deleting, setDeleting] = useState<Account | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -93,9 +114,57 @@ export default function AccountsPage() {
     };
   }, []);
 
-  function openEdit(account: Account) {
-    setForm({ role: account.role, employeeId: account.employeeId ?? "" });
-    setEditing(account);
+  function openEdit(a: Account) {
+    setForm({ role: a.role, employeeId: a.employeeId ?? "", email: a.email });
+    setEditError(null);
+    setEditing(a);
+  }
+
+  function openReset(a: Account) {
+    setTempPassword(suggestTempPassword());
+    setResetDone(false);
+    setResetError(null);
+    setResetting(a);
+  }
+
+  async function handleReset() {
+    if (!resetting) return;
+    setSaving(true);
+    setResetError(null);
+    try {
+      const res = await fetch(`/api/users/${resetting.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: tempPassword }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? "Không đặt lại được mật khẩu.");
+      // Giữ modal mở để quản trị viên chép mật khẩu tạm đọc cho nhân viên — đóng ngay sau
+      // khi lưu là mất chuỗi đó vĩnh viễn (server chỉ lưu hash).
+      setResetDone(true);
+      await load();
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Lỗi không xác định.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleting) return;
+    setSaving(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/users/${deleting.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? "Không xoá được tài khoản.");
+      setDeleting(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Lỗi không xác định.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openCreate() {
@@ -104,7 +173,7 @@ export default function AccountsPage() {
       lastName: "",
       email: "",
       phone: "",
-      password: "",
+      password: suggestTempPassword(),
       role: "staff",
       employeeId: "",
     });
@@ -146,17 +215,23 @@ export default function AccountsPage() {
     if (!editing) return;
     setSaving(true);
     try {
+      // Tài khoản admin: chỉ đổi được email (vai trò admin không gán/gỡ qua giao diện, xem
+      // ASSIGNABLE_ROLES) — gửi `role` cho admin sẽ bị server hiểu là hạ cấp.
+      const payload =
+        editing.role === "admin"
+          ? { email: form.email }
+          : { role: form.role, employeeId: form.employeeId || null, email: form.email };
       const res = await fetch(`/api/users/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: form.role, employeeId: form.employeeId || null }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message ?? "Không lưu được.");
       setEditing(null);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Lỗi không xác định.");
+      setEditError(err instanceof Error ? err.message : "Lỗi không xác định.");
     } finally {
       setSaving(false);
     }
@@ -195,7 +270,14 @@ export default function AccountsPage() {
                     <td className="px-5 py-3 font-semibold">
                       {a.firstName} {a.lastName}
                     </td>
-                    <td className="px-5 py-3 text-zinc-400">{a.email}</td>
+                    <td className="px-5 py-3 text-zinc-400">
+                      {a.email}
+                      {a.mustChangePassword && (
+                        <span className="ml-2">
+                          <Badge tone="orange">chưa đổi mật khẩu tạm</Badge>
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-3">
                       <Badge tone={a.role === "admin" ? "violet" : a.role === "manager" ? "sky" : "zinc"}>
                         {ROLE_LABELS[a.role] ?? a.role}
@@ -204,12 +286,33 @@ export default function AccountsPage() {
                     <td className="px-5 py-3 text-zinc-400">
                       {a.employeeName ? `${a.employeeName} (${a.employeePosition ?? "—"})` : "— Chưa liên kết —"}
                     </td>
-                    <td className="px-5 py-3 text-right">
-                      {a.role === "admin" ? (
-                        <span className="text-xs text-zinc-600">Không sửa được</span>
-                      ) : (
-                        <GhostButton onClick={() => openEdit(a)}>Sửa</GhostButton>
-                      )}
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(a)}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-zinc-300 hover:bg-white/[0.06]"
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openReset(a)}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-sky-400 hover:bg-sky-500/10"
+                        >
+                          Đặt lại mật khẩu
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteError(null);
+                            setDeleting(a);
+                          }}
+                          className="rounded-lg px-2 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/10"
+                        >
+                          Xoá
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -270,7 +373,7 @@ export default function AccountsPage() {
               label="Mật khẩu tạm"
               type="text"
               required
-              hint="ít nhất 6 ký tự — báo trực tiếp cho nhân viên, họ tự đổi sau khi đăng nhập lần đầu"
+              hint="ít nhất 8 ký tự — đã gợi ý sẵn một chuỗi ngẫu nhiên. Nhân viên BẮT BUỘC đổi ở lần đăng nhập đầu"
               value={createForm.password}
               onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
             />
@@ -318,31 +421,135 @@ export default function AccountsPage() {
           }
         >
           <form id="account-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <SelectField
-              label="Vai trò"
-              value={form.role}
-              onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
-            >
-              {ASSIGNABLE_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField
-              label="Hồ sơ nhân sự liên kết"
-              hint="quyết định luồng kế toán/KTV — bỏ trống = tài khoản dùng đủ tính năng"
-              value={form.employeeId}
-              onChange={(e) => setForm((p) => ({ ...p, employeeId: e.target.value }))}
-            >
-              <option value="">— Không liên kết —</option>
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} {emp.position ? `(${emp.position})` : ""}
-                </option>
-              ))}
-            </SelectField>
+            <ErrorBanner message={editError} />
+            <TextField
+              label="Email đăng nhập"
+              type="email"
+              required
+              value={form.email}
+              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+            />
+            {editing.role === "admin" ? (
+              <p className="rounded-xl bg-white/[0.04] px-4 py-3 text-xs text-zinc-400">
+                Tài khoản quản trị viên: chỉ đổi được email. Nếu đây là tài khoản demo đang là quản
+                trị viên duy nhất, hãy đổi sang email thật của chủ gara rồi bấm{" "}
+                <b>Đặt lại mật khẩu</b> — tài khoản demo không xoá được vì hệ thống luôn cần ít nhất
+                một quản trị viên.
+              </p>
+            ) : (
+              <>
+                <SelectField
+                  label="Vai trò"
+                  value={form.role}
+                  onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
+                >
+                  {ASSIGNABLE_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_LABELS[r]}
+                    </option>
+                  ))}
+                </SelectField>
+                <SelectField
+                  label="Hồ sơ nhân sự liên kết"
+                  hint="quyết định luồng kế toán/KTV — bỏ trống = tài khoản dùng đủ tính năng"
+                  value={form.employeeId}
+                  onChange={(e) => setForm((p) => ({ ...p, employeeId: e.target.value }))}
+                >
+                  <option value="">— Không liên kết —</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name} {emp.position ? `(${emp.position})` : ""}
+                    </option>
+                  ))}
+                </SelectField>
+              </>
+            )}
           </form>
+        </Modal>
+      )}
+
+      {resetting && (
+        <Modal
+          title={`Đặt lại mật khẩu — ${resetting.email}`}
+          onClose={() => setResetting(null)}
+          footer={
+            resetDone ? (
+              <PrimaryButton type="button" onClick={() => setResetting(null)}>
+                Đã chép mật khẩu, đóng
+              </PrimaryButton>
+            ) : (
+              <>
+                <GhostButton type="button" onClick={() => setResetting(null)} disabled={saving}>
+                  Huỷ
+                </GhostButton>
+                <PrimaryButton type="button" onClick={handleReset} disabled={saving || tempPassword.length < 8}>
+                  {saving ? "Đang lưu..." : "Đặt mật khẩu tạm"}
+                </PrimaryButton>
+              </>
+            )
+          }
+        >
+          <div className="flex flex-col gap-4">
+            <ErrorBanner message={resetError} />
+            {resetDone ? (
+              <>
+                <p className="text-sm text-emerald-300">
+                  Đã đặt. Đọc mật khẩu tạm dưới đây cho người dùng — đóng hộp thoại này là không xem
+                  lại được nữa.
+                </p>
+                <p className="rounded-xl bg-black/40 px-4 py-3 text-center font-mono text-lg tracking-wider select-all">
+                  {tempPassword}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Ở lần đăng nhập kế tiếp, hệ thống chặn mọi trang cho tới khi họ tự đặt mật khẩu mới.
+                  Phiên đăng nhập hiện có của tài khoản này cũng bị chặn truy cập dữ liệu ngay lập tức.
+                </p>
+              </>
+            ) : (
+              <>
+                <TextField
+                  label="Mật khẩu tạm"
+                  hint="đã gợi ý sẵn chuỗi ngẫu nhiên — có thể sửa, tối thiểu 8 ký tự"
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                />
+                <p className="text-xs text-zinc-500">
+                  Người dùng sẽ phải đổi mật khẩu này ở lần đăng nhập tiếp theo. Dùng khi nhân viên quên
+                  mật khẩu, hoặc khi mật khẩu cũ có thể đã lộ.
+                </p>
+              </>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {deleting && (
+        <Modal
+          title="Xoá tài khoản"
+          onClose={() => setDeleting(null)}
+          footer={
+            <>
+              <GhostButton type="button" onClick={() => setDeleting(null)} disabled={saving}>
+                Huỷ
+              </GhostButton>
+              <DangerButton type="button" onClick={handleDelete} disabled={saving}>
+                {saving ? "Đang xoá..." : "Xoá tài khoản"}
+              </DangerButton>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <ErrorBanner message={deleteError} />
+            <p className="text-sm text-zinc-300">
+              Xoá tài khoản <span className="font-semibold">{deleting.email}</span>? Người này sẽ không
+              đăng nhập được nữa.
+            </p>
+            <p className="text-sm text-zinc-500">
+              Hồ sơ nhân sự{deleting.employeeName ? ` "${deleting.employeeName}"` : ""} và giờ công đã chấm
+              vẫn được giữ — chỉ mất quyền đăng nhập. Hệ thống từ chối xoá tài khoản đang đăng nhập
+              và quản trị viên cuối cùng.
+            </p>
+          </div>
         </Modal>
       )}
     </div>

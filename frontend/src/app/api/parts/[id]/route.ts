@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { badRequest, conflict, handle, notFound, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
 import {
@@ -9,6 +10,14 @@ import {
   updatePart,
   type PartInput,
 } from "@/server/store/parts";
+import {
+  optionalNonNegativeInt,
+  optionalText,
+  parseBody,
+  requiredText,
+  uuidField,
+  vndAmount,
+} from "@/server/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -27,24 +36,33 @@ export async function GET(_request: Request, { params }: Params) {
   });
 }
 
+// `stock` cố ý KHÔNG có ở đây: tồn kho chỉ đổi qua phiếu nhập/xuất (xem createPart).
+const patchSchema = z.object({
+  code: requiredText("Mã phụ tùng", 50).transform((v) => v.toUpperCase()).optional(),
+  name: requiredText("Tên phụ tùng", 300).optional(),
+  category: requiredText("Nhóm phụ tùng", 100).optional(),
+  branchId: uuidField.optional(),
+  unit: requiredText("Đơn vị", 20).optional(),
+  oemNumber: optionalText(100).optional(),
+  location: optionalText(100).optional(),
+  price: vndAmount.optional(),
+  cost: optionalNonNegativeInt.optional(),
+  minStock: optionalNonNegativeInt.optional(),
+});
+
 export async function PATCH(request: Request, { params }: Params) {
   return handle(async () => {
     if (!(await requireUser())) return unauthorized();
     const { id } = await params;
-    const body = await request.json().catch(() => ({}));
 
+    const parsed = await parseBody(request, patchSchema);
+    if (!parsed.ok) return parsed.response;
+
+    // Chỉ giữ trường có gửi lên (undefined = giữ nguyên).
     const patch: Partial<PartInput> = {};
-    if (typeof body.code === "string" && body.code.trim()) patch.code = body.code.trim().toUpperCase();
-    if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim();
-    if (typeof body.category === "string" && body.category.trim()) patch.category = body.category.trim();
-    if (typeof body.branchId === "string" && body.branchId) patch.branchId = body.branchId;
-    if (typeof body.unit === "string" && body.unit.trim()) patch.unit = body.unit.trim();
-    if ("oemNumber" in body) patch.oemNumber = body.oemNumber?.trim() || null;
-    if ("location" in body) patch.location = body.location?.trim() || null;
-    if ("price" in body) patch.price = Number(body.price) || 0;
-    if ("cost" in body) patch.cost = body.cost ? Number(body.cost) : null;
-    if ("minStock" in body) patch.minStock = body.minStock ? Number(body.minStock) : null;
-
+    for (const [key, value] of Object.entries(parsed.data)) {
+      if (value !== undefined) (patch as Record<string, unknown>)[key] = value;
+    }
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     try {
