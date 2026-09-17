@@ -49,13 +49,9 @@ jobs:
           JWT_SECRET: ci-only-not-a-real-secret-0000000000000000
 
       # Mật khẩu đã gỡ khỏi trang đăng nhập ngày 17/09/2026 không được quay lại bundle
-      # trình duyệt qua bất kỳ đường nào. Quét chuỗi thay vì tin vào code review.
+      # trình duyệt qua bất kỳ đường nào. Cùng script với `npm run check` ở máy dev.
       - name: Không có mật khẩu cũ trong bundle client
-        run: |
-          if grep -rIl "demo1234\|aa660156\|f7820a49" .next/static; then
-            echo "::error::Mật khẩu đã lộ xuất hiện lại trong .next/static"
-            exit 1
-          fi
+        run: node scripts/check-bundle.mjs
 
       - name: Audit phụ thuộc (chỉ critical/high)
         run: npm audit --audit-level=high

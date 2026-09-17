@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "data:name-prices": "node scripts/extract-name-prices.mjs",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build && node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

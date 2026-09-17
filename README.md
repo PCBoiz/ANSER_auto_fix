@@ -54,7 +54,8 @@ Công cụ dữ liệu (`cd frontend`):
 | `npm run data:clean-demo --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
 | `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `--apply-cost` / `--apply-rename` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | 84 test vitest cho module thuần — không cần DB |
+| `npm test` | 90 test vitest cho module thuần — không cần DB |
+| `npm run check` | Đúng chuỗi CI: typecheck → lint → test → build → quét bundle. Chạy trước khi push. |
 
 ## Trạng thái hiện tại
 
