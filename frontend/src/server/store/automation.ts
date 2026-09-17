@@ -19,6 +19,10 @@ export async function listRules() {
       categoryFilter: automationRules.categoryFilter,
       enabled: automationRules.enabled,
       n8nWorkflowId: automationRules.n8nWorkflowId,
+      lastRunAt: automationRules.lastRunAt,
+      lastRunStatus: automationRules.lastRunStatus,
+      lastRunSummary: automationRules.lastRunSummary,
+      lastRunSource: automationRules.lastRunSource,
       createdAt: automationRules.createdAt,
     })
     .from(automationRules)
@@ -78,4 +82,6 @@ export const WORKFLOW_NAMES: Record<AutomationRuleType, string> = {
   awaiting_acceptance_reminder: "ANSER Auto — Nhắc chờ nghiệm thu quá hạn",
   unpaid_invoice_report: "ANSER Auto — Báo cáo công nợ",
   revenue_report: "ANSER Auto — Báo cáo doanh thu ngày",
+  morning_brief: "ANSER Auto — Bản tin sáng cho quản lý xưởng",
+  accounting_digest: "ANSER Auto — Tổng hợp tuần cho kế toán",
 };

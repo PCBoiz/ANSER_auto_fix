@@ -20,8 +20,8 @@ export const vndAmount = z.coerce
   .number({ message: "Số tiền không hợp lệ." })
   .int("Số tiền phải là số nguyên đồng.")
   .min(0, "Số tiền không được âm.")
-  // ~9.2 nghìn tỷ — chặn số vô lý do gõ nhầm, và giữ trong tầm `integer` của Postgres
-  // sau khi nhân số lượng. `integer` Postgres tối đa ~2,1 tỷ, nên chặn ở 2 tỷ.
+  // Cột tiền là `integer` Postgres (tối đa ~2,147 tỷ). Chặn ở 2 tỷ để lỗi gõ thừa chữ số
+  // báo ngay tại đây bằng tiếng Việt, thay vì nổ "integer out of range" từ DB.
   .max(2_000_000_000, "Số tiền vượt quá giới hạn cho phép.");
 
 /** Số lượng: nguyên dương. Xuất kho 0 cái hoặc -3 cái đều không có nghĩa. */
@@ -33,7 +33,9 @@ export const positiveQuantity = z.coerce
 
 /** Số nguyên không âm, cho phép bỏ trống (null = chưa biết, khác 0). */
 export const optionalNonNegativeInt = z
-  .union([z.coerce.number().int().min(0), z.null(), z.literal("")])
+  .union([z.coerce.number().int().min(0), z.null(), z.literal("")], {
+    message: "Phải là số nguyên từ 0 trở lên, hoặc để trống.",
+  })
   .transform((v) => (v === "" || v === null ? null : (v as number)));
 
 /** Chuỗi bắt buộc, đã trim, không rỗng. */
@@ -77,7 +79,9 @@ export const passwordField = z
 export const uuidField = z.string().uuid("Mã định danh không hợp lệ.");
 
 export const optionalUuid = z
-  .union([z.string().uuid("Mã định danh không hợp lệ."), z.literal(""), z.null()])
+  .union([z.string().uuid("Mã định danh không hợp lệ."), z.literal(""), z.null()], {
+    message: "Mã định danh không hợp lệ.",
+  })
   .optional()
   .transform((v) => (v === undefined || v === null || v === "" ? null : v));
 

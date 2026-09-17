@@ -12,7 +12,10 @@
       "name": "Nhận đổi trạng thái",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [180, 300]
+      "position": [
+        180,
+        300
+      ]
     },
     {
       "parameters": {
@@ -23,19 +26,30 @@
       "name": "Soạn thư báo khách",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [420, 300]
+      "position": [
+        420,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [{ "value1": "={{ $json.email_to }}", "operation": "isNotEmpty" }]
+          "string": [
+            {
+              "value1": "={{ $json.email_to }}",
+              "operation": "isNotEmpty"
+            }
+          ]
         }
       },
       "id": "os-if-email",
       "name": "Có email khách?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [660, 300]
+      "position": [
+        660,
+        300
+      ]
     },
     {
       "parameters": {
@@ -49,7 +63,10 @@
       "name": "Gửi Email",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [900, 200]
+      "position": [
+        900,
+        200
+      ]
     },
     {
       "parameters": {
@@ -59,19 +76,100 @@
       "name": "Bỏ qua (không có email)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 420]
+      "position": [
+        900,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/heartbeat",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"order_status_update\", \"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "hb-order_status_update",
+      "name": "Báo app: đã gửi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1140,
+        200
+      ],
+      "executeOnce": true
     }
   ],
   "connections": {
-    "Nhận đổi trạng thái": { "main": [[{ "node": "Soạn thư báo khách", "type": "main", "index": 0 }]] },
-    "Soạn thư báo khách": { "main": [[{ "node": "Có email khách?", "type": "main", "index": 0 }]] },
+    "Nhận đổi trạng thái": {
+      "main": [
+        [
+          {
+            "node": "Soạn thư báo khách",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn thư báo khách": {
+      "main": [
+        [
+          {
+            "node": "Có email khách?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Có email khách?": {
       "main": [
-        [{ "node": "Gửi Email", "type": "main", "index": 0 }],
-        [{ "node": "Bỏ qua (không có email)", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Gửi Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bỏ qua (không có email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi Email": {
+      "main": [
+        [
+          {
+            "node": "Báo app: đã gửi",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

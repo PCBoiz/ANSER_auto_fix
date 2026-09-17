@@ -21,6 +21,8 @@ const TYPE_LABELS: Record<string, string> = {
   awaiting_acceptance_reminder: "Nhắc chờ nghiệm thu quá hạn",
   unpaid_invoice_report: "Báo cáo công nợ",
   revenue_report: "Báo cáo doanh thu định kỳ",
+  morning_brief: "Bản tin sáng cho quản lý xưởng",
+  accounting_digest: "Tổng hợp tuần cho kế toán",
 };
 
 const TYPE_DESCRIPTIONS: Record<string, string> = {
@@ -33,6 +35,34 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
   unpaid_invoice_report:
     "9h mỗi ngày, gửi quản lý danh sách hoá đơn chưa thu đủ quá hạn — không gửi khách.",
   revenue_report: "20h mỗi ngày, gửi báo cáo doanh thu về email doanh nghiệp.",
+  morning_brief:
+    "7h mỗi ngày, MỘT bản tin gộp xe quá hẹn trả, xe chờ nghiệm thu, đặt hàng ngoài về trễ, lịch hẹn, phụ tùng sắp hết và công nợ. Lên chuông thông báo ngay cả khi n8n không chạy.",
+  accounting_digest:
+    "8h thứ Hai, gửi kế toán: hoá đơn mua hàng chưa nhận theo nhà cung cấp, hàng đã giao chưa lập hoá đơn, và khách bị ghi nhiều tên. Lên chuông thông báo ngay cả khi n8n không chạy.",
+};
+
+// Quy tắc có bộ lập lịch NỘI BỘ (chạy trong app, không cần n8n) — có nút "Chạy ngay".
+const IN_APP_JOBS = new Set(["morning_brief", "accounting_digest"]);
+
+const SOURCE_LABELS: Record<string, string> = {
+  schedule: "n8n theo lịch",
+  n8n: "n8n",
+  cron: "lịch nội bộ của app",
+  manual: "chạy tay",
+};
+
+const STATUS_TONES: Record<string, "emerald" | "sky" | "red" | "zinc"> = {
+  ok: "emerald",
+  fetched: "sky",
+  error: "red",
+  skipped: "zinc",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  ok: "đã gửi xong",
+  fetched: "đã lấy dữ liệu",
+  error: "lỗi",
+  skipped: "bỏ qua",
 };
 
 // Tên file JSON trong public/n8n-templates/ — sinh tự động từ n8n-workflows/ (xem
@@ -45,6 +75,8 @@ const TEMPLATE_FILES: Record<string, string> = {
   awaiting_acceptance_reminder: "awaiting_acceptance_reminder.json",
   unpaid_invoice_report: "unpaid_invoice_report.json",
   revenue_report: "revenue_report.json",
+  morning_brief: "morning_brief.json",
+  accounting_digest: "accounting_digest.json",
 };
 
 type Rule = {
@@ -60,7 +92,26 @@ type Rule = {
   expectedWorkflowName: string | null;
   matchedWorkflowId: string | null;
   n8nActive: boolean | null;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  lastRunSummary: string | null;
+  lastRunSource: string | null;
 };
+
+// Quá 48 giờ không có nhịp từ nguồn LỊCH thì coi là lịch đã chết. Lần chạy tay không tính —
+// nó chứng minh code chạy được, không chứng minh lịch có tự nổ.
+const STALE_MS = 48 * 60 * 60 * 1000;
+
+function runHealth(rule: Rule): { tone: "emerald" | "orange" | "red" | "zinc"; text: string } {
+  if (!rule.enabled) return { tone: "zinc", text: "Đang tắt" };
+  if (!rule.lastRunAt) return { tone: "red", text: "Chưa từng chạy" };
+  const scheduled = rule.lastRunSource !== "manual";
+  const age = Date.now() - new Date(rule.lastRunAt).getTime();
+  if (!scheduled) return { tone: "orange", text: "Mới chỉ chạy tay — chưa có lần tự chạy" };
+  if (rule.lastRunStatus === "error") return { tone: "red", text: "Lần chạy gần nhất bị lỗi" };
+  if (age > STALE_MS) return { tone: "orange", text: "Quá 48 giờ không chạy" };
+  return { tone: "emerald", text: "Đang tự chạy" };
+}
 
 type Execution = {
   id: string | number;
@@ -76,6 +127,7 @@ export default function AutomationPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<Rule | null>(null);
   const [thresholds, setThresholds] = useState({ qty: "", days: "", km: "" });
@@ -139,6 +191,27 @@ export default function AutomationPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.message ?? "Không đổi được trạng thái.");
+      setNotice(data?.warning ?? null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi không xác định.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runNow(rule: Rule) {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/automation/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job: rule.type }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.result?.summary ?? data?.message ?? "Chạy không thành công.");
+      setNotice(`${rule.name}: ${data.result.summary}. Xem chuông thông báo ở góc trên.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
@@ -154,10 +227,12 @@ export default function AutomationPage() {
       const res = await fetch(`/api/automation/rules/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
+        // Gửi chuỗi rỗng thành null (xoá ngưỡng), còn "0" giữ nguyên là 0 — server phân
+        // biệt hai trường hợp này (xem optionalNonNegativeInt).
         body: JSON.stringify({
-          thresholdQty: thresholds.qty || null,
-          thresholdDays: thresholds.days || null,
-          thresholdKm: thresholds.km || null,
+          thresholdQty: thresholds.qty === "" ? null : Number(thresholds.qty),
+          thresholdDays: thresholds.days === "" ? null : Number(thresholds.days),
+          thresholdKm: thresholds.km === "" ? null : Number(thresholds.km),
         }),
       });
       if (!res.ok) {
@@ -225,15 +300,22 @@ export default function AutomationPage() {
     <div>
       <PageHeader
         title="Tự động hoá"
-        subtitle="Các quy tắc chạy qua n8n. Bật/tắt ở đây điều khiển workflow thật trong n8n."
+        subtitle="Bật/tắt và ngưỡng ở đây là công tắc thật: mọi workflow đều đọc lại từ app trước khi gửi."
       />
 
       <ErrorBanner message={error} />
 
+      {notice && (
+        <div className="mb-4 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
+          {notice}
+        </div>
+      )}
+
       {!n8nConfigured && (
         <div className="mb-4 rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-sm text-orange-200">
-          <b>Chưa kết nối n8n.</b> Các công tắc dưới đây hiện chỉ đổi cờ trong cơ sở dữ liệu
-          của app, <b>không</b> thực sự bật/tắt workflow nào. Để điều khiển thật: chạy{" "}
+          <b>Chưa kết nối n8n</b> nên chưa gửi được email nào. Tắt quy tắc ở đây vẫn có tác dụng
+          (workflow đọc lại cờ trong app trước khi gửi), và <b>bản tin sáng / tổng hợp kế toán</b>{" "}
+          vẫn lên chuông thông báo nhờ lịch nội bộ. Để gửi email: chạy{" "}
           <code className="rounded bg-black/40 px-1">docker compose up -d</code>, tạo API key
           trong n8n UI (Settings → n8n API) rồi dán vào <code className="rounded bg-black/40 px-1">N8N_API_KEY</code>.
         </div>
@@ -251,6 +333,7 @@ export default function AutomationPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           {rules.map((rule) => {
             const linked = Boolean(rule.matchedWorkflowId);
+            const health = runHealth(rule);
             return (
               <Card key={rule.id} className="p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -289,6 +372,27 @@ export default function AutomationPage() {
                   {rule.branchName && <Badge tone="violet">{rule.branchName}</Badge>}
                 </div>
 
+                {/* Bằng chứng chạy thật — ghi bởi chính endpoint mà workflow/lịch gọi vào.
+                    Trả lời câu hỏi "có tự chạy đúng lịch không" mà không phải mở n8n. */}
+                <div className="mt-4 rounded-xl bg-black/20 px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={health.tone}>{health.text}</Badge>
+                    {rule.lastRunStatus && (
+                      <Badge tone={STATUS_TONES[rule.lastRunStatus] ?? "zinc"}>
+                        {STATUS_LABELS[rule.lastRunStatus] ?? rule.lastRunStatus}
+                      </Badge>
+                    )}
+                  </div>
+                  {rule.lastRunAt ? (
+                    <p className="mt-1.5 text-xs text-zinc-400">
+                      {formatDateTime(rule.lastRunAt)} · {SOURCE_LABELS[rule.lastRunSource ?? ""] ?? "không rõ nguồn"}
+                      {rule.lastRunSummary && <span className="block text-zinc-500">{rule.lastRunSummary}</span>}
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-zinc-500">Chưa có nhịp chạy nào được ghi nhận.</p>
+                  )}
+                </div>
+
                 <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.08] pt-3">
                   {!n8nConfigured ? (
                     <Badge tone="orange">Chưa kết nối n8n</Badge>
@@ -300,7 +404,16 @@ export default function AutomationPage() {
                     <Badge tone="red">Chưa import workflow</Badge>
                   )}
 
-                  <div className="ml-auto flex gap-1">
+                  <div className="ml-auto flex flex-wrap gap-1">
+                    {IN_APP_JOBS.has(rule.type) && (
+                      <button
+                        onClick={() => runNow(rule)}
+                        disabled={busy}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold text-sky-400 hover:bg-sky-500/10 disabled:opacity-50"
+                      >
+                        Chạy ngay
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setEditing(rule);
@@ -375,6 +488,34 @@ export default function AutomationPage() {
                 onChange={(e) => setThresholds((p) => ({ ...p, days: e.target.value }))}
               />
             )}
+            {editing.type === "morning_brief" && (
+              <>
+                <TextField
+                  label="Xe chờ nghiệm thu quá (ngày)"
+                  type="number"
+                  min={0}
+                  value={thresholds.days}
+                  onChange={(e) => setThresholds((p) => ({ ...p, days: e.target.value }))}
+                />
+                <TextField
+                  label="Liệt kê tối đa bao nhiêu phụ tùng sắp hết"
+                  type="number"
+                  min={0}
+                  hint="phần còn lại chỉ đếm tổng"
+                  value={thresholds.qty}
+                  onChange={(e) => setThresholds((p) => ({ ...p, qty: e.target.value }))}
+                />
+              </>
+            )}
+            {editing.type === "accounting_digest" && (
+              <TextField
+                label="Hoá đơn mua hàng chưa nhận quá (ngày)"
+                type="number"
+                min={0}
+                value={thresholds.days}
+                onChange={(e) => setThresholds((p) => ({ ...p, days: e.target.value }))}
+              />
+            )}
             {(editing.type === "awaiting_acceptance_reminder" ||
               editing.type === "unpaid_invoice_report") && (
               <TextField
@@ -398,11 +539,16 @@ export default function AutomationPage() {
               />
             )}
 
-            <p className="rounded-xl bg-orange-500/10 px-4 py-3 text-xs text-orange-200">
-              <b>Lưu ý:</b> ngưỡng lưu ở đây chưa được workflow n8n đọc — các workflow hiện
-              truyền tham số cứng trong URL (vd <code>?days=7&amp;km=500</code>). Sửa ở đây
-              đổi số liệu trang Tổng quan, nhưng muốn đổi hành vi email tự động thì phải sửa
-              URL trong node HTTP Request của workflow tương ứng.
+            <p className="rounded-xl bg-sky-500/10 px-4 py-3 text-xs text-sky-200">
+              Workflow đọc ngưỡng này từ app mỗi lần chạy — lưu xong là lần chạy kế tiếp dùng số
+              mới, không cần sửa hay import lại gì bên n8n.
+              {editing.type === "low_stock_alert" && (
+                <>
+                  {" "}
+                  Muốn một phụ tùng <b>không bao giờ</b> cảnh báo (vật tư đặt theo xe), đặt ngưỡng
+                  riêng của nó bằng 0 ở Kho phụ tùng → Nhập giá hàng loạt.
+                </>
+              )}
             </p>
           </div>
         </Modal>

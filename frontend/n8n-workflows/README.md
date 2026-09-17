@@ -1,17 +1,70 @@
 # Workflow n8n — ANSER Auto
 
-7 workflow, import thủ công qua n8n UI (n8n không có API import dùng được ở đây — đúng cách
+9 workflow, import thủ công qua n8n UI (n8n không có API import dùng được ở đây — đúng cách
 ANSER Flask và ANSER v2 cũng làm).
 
 | File | Trigger | Gọi vào Next.js | Gửi cho ai |
 |---|---|---|---|
-| `low_stock_alert.json` | Lịch, mỗi 6 giờ | `GET /api/n8n/internal/branches` → lặp từng chi nhánh → `GET /api/n8n/internal/low-stock?branchId=` | Email cảnh báo của **từng chi nhánh** |
-| `maintenance_reminder.json` | Lịch, 8h mỗi ngày | `GET /api/n8n/internal/due-for-service?days=7&km=500` | **Khách hàng** (1 thư/xe) + bản tổng hợp cho gara |
-| `appointment_reminder.json` | Lịch, 17h mỗi ngày | `GET /api/n8n/internal/appointments?hours=24` | **Khách hàng** (1 thư/lịch hẹn) + bảng phân công cho lễ tân |
+| `morning_brief.json` **(mới)** | Lịch, 7h mỗi ngày | `GET /api/n8n/internal/morning-brief` | Email doanh nghiệp — **một** bản tin gộp mọi việc trong ngày |
+| `accounting_digest.json` **(mới)** | Lịch, 8h thứ Hai | `GET /api/n8n/internal/accounting-digest` | Email doanh nghiệp — tổng hợp tuần cho kế toán |
+| `low_stock_alert.json` | Lịch, mỗi 6 giờ | `GET /internal/branches` → lặp từng chi nhánh → `GET /internal/low-stock?branchId=&limit=30` | Email cảnh báo của **từng chi nhánh** |
+| `maintenance_reminder.json` | Lịch, 8h mỗi ngày | `GET /api/n8n/internal/due-for-service` | **Khách hàng** (1 thư/xe) + bản tổng hợp cho gara |
+| `appointment_reminder.json` | Lịch, 17h mỗi ngày | `GET /api/n8n/internal/appointments` | **Khách hàng** (1 thư/lịch hẹn) + bảng phân công cho lễ tân |
 | `order_status_update.json` | Webhook `POST /webhook/order-status` | — (Next.js tự gọi vào) | **Khách hàng** |
-| `awaiting_acceptance_reminder.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/awaiting-acceptance?days=2` | **Khách hàng** (1 thư/lệnh, xe chờ nghiệm thu quá hạn) + bản tổng hợp cho gara |
-| `unpaid_invoice_report.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/unpaid-invoices?days=7` | Chỉ **email doanh nghiệp** (quản lý/kế toán) — không gửi khách |
+| `awaiting_acceptance_reminder.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/awaiting-acceptance` | **Khách hàng** (1 thư/lệnh) + bản tổng hợp cho gara |
+| `unpaid_invoice_report.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/unpaid-invoices` | Chỉ **email doanh nghiệp** — không gửi khách |
 | `revenue_report.json` | Lịch, 20h mỗi ngày | `GET /api/n8n/internal/revenue?period=day` | Email doanh nghiệp |
+
+## 0. Thay đổi ngày 17/09/2026 — đọc trước khi import lại
+
+**Ngưỡng không còn nằm trong URL.** Trước đây workflow truyền cứng `?days=7&km=500`, nên sửa
+ngưỡng trên trang Tự động hoá không có tác dụng. Nay mọi endpoint `/internal/*` tự đọc ngưỡng
+từ quy tắc trong DB. Tham số URL chỉ còn tác dụng khi kèm `override=1` (để thử tay), nên các
+workflow **đã import từ trước vẫn chạy và tự theo ngưỡng mới** — không bắt buộc import lại.
+
+**Công tắc Bật/Tắt trong app là công tắc thật.** Endpoint trả `{ skipped: true, count: 0 }` khi
+quy tắc đang tắt; mọi workflow đều kiểm tra `count > 0` (hoặc `send`) trước khi gửi. Tắt trong app
+là dừng gửi, kể cả khi workflow bên n8n vẫn Active hoặc khi n8n không liên lạc được.
+
+**App tự biết workflow có chạy hay không.** Mỗi lần endpoint dữ liệu được gọi, app ghi lại
+`last_run_at` + nguồn gọi vào quy tắc tương ứng; node cuối "Báo app: đã gửi" (`POST
+/internal/heartbeat`) ghi thêm kết quả gửi. Trang Tự động hoá hiện "Đang tự chạy / Quá 48 giờ
+không chạy / Chưa từng chạy" từ chính dữ liệu đó — không cần mở n8n để trả lời câu hỏi "lịch có
+chạy đúng giờ không".
+
+Header `X-Anser-Trigger: {{ $execution.mode === 'production' ? 'schedule' : 'manual' }}` trong
+các node HTTP Request giúp app phân biệt **lịch tự nổ** với **người bấm Execute workflow**. Lần
+gọi bằng curl/trình duyệt (không có header, không phải n8n) **không được ghi** — để một lần thử
+tay không làm giả bằng chứng lịch đang chạy.
+
+**Import lại để có:** node nhịp tim, header nguồn chạy, và (riêng `low_stock_alert`) giới hạn 30
+dòng mỗi email kèm tổng số thật. Không import lại thì mọi thứ khác vẫn đúng như trên.
+
+### Vì sao hai bản tin mới dựng nội dung trong app, không trong node Code
+
+Nội dung email là nghiệp vụ. Viết trong node Code của n8n thì nó nằm trong file JSON không ai
+review, không typecheck, và phải import lại bằng tay mỗi lần sửa một chữ. `morning_brief` và
+`accounting_digest` nhận sẵn `subject` + `html` + `send` từ app
+(`src/server/automation/digests.ts`); workflow chỉ còn "hẹn giờ → gọi URL → nếu `send` thì gửi →
+báo nhịp tim". Chuông thông báo trong app dùng chính dữ liệu đó, nên email và màn hình không bao
+giờ nói hai con số khác nhau.
+
+Hai bản tin này thay cho bộ 10 workflow kế toán/quản lý xưởng đã bị revert (`e4c131d`): 10
+endpoint gần trùng nhau, mỗi cái một email riêng. Quản lý nhận 4–5 email mỗi ngày từ cùng một
+hệ thống là công thức để tất cả bị bỏ qua.
+
+### Không có n8n vẫn có cảnh báo
+
+`GET /api/cron/automation` chạy bản tin sáng, tổng hợp kế toán và kiểm tra sẵn sàng vận hành
+**ngay trong app**, rồi đẩy kết quả lên chuông thông báo (không gửi email). Lịch mặc định ở
+`frontend/vercel.json` (Vercel Cron, giờ UTC: `0 0 * * *` = 7h sáng Việt Nam). Tự host thì dùng
+Windows Task Scheduler / crontab:
+
+```bash
+curl -H "X-Cron-Secret: $CRON_SECRET" "https://<domain>/api/cron/automation?job=morning_brief&job=readiness"
+```
+
+Thiếu `CRON_SECRET` ở production thì endpoint trả 503.
 
 3 workflow nhắc khách (`maintenance_reminder`, `appointment_reminder`,
 `awaiting_acceptance_reminder`) đều có **nhánh thứ hai gửi bản tổng hợp cho gara**, trong đó
@@ -45,7 +98,7 @@ N8N_INTERNAL_TOKEN=<chuỗi ngẫu nhiên dài>
 ```
 
 rồi thay `REPLACE_WITH_N8N_INTERNAL_TOKEN` trong **mọi node HTTP Request** của các workflow
-bằng đúng chuỗi đó.
+bằng đúng chuỗi đó — kể cả các node "Báo app: …" (nhịp tim) ở cuối workflow.
 
 > Các endpoint `/api/n8n/internal/*` trả về tên, SĐT và email khách hàng. Không có token thì
 > bất kỳ ai chạm được tới server đều đọc sạch. Ở `NODE_ENV=development`, biến này để trống

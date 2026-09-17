@@ -295,13 +295,36 @@ export type LowStockPart = {
   location: string | null;
 };
 
+/**
+ * Điều kiện "phụ tùng này đang dưới ngưỡng" — MỘT chỗ duy nhất, dùng chung cho cảnh báo
+ * tồn kho, trang Tổng quan và bộ kiểm tra sẵn sàng vận hành.
+ *
+ * Ngữ nghĩa của `minStock`:
+ *   - `null` -> dùng ngưỡng chung của quy tắc tự động (`fallback`)
+ *   - `0`    -> CỐ Ý không cảnh báo (vật tư đặt theo từng xe, tồn 0 là bình thường)
+ *   - `n > 0`-> cảnh báo khi tồn <= n
+ *
+ * Bẫy đã sửa (17/09/2026): điều kiện cũ là `stock <= coalesce(minStock, fallback)`. Với
+ * `minStock = 0` và tồn 0, `0 <= 0` là đúng — tức là đặt ngưỡng 0 để TẮT cảnh báo lại
+ * vẫn cảnh báo. Kho đồng-sơn có 587 mã tồn 0, nên cách duy nhất để dập 724 dòng cảnh báo
+ * mỗi 6 giờ đã không hoạt động.
+ */
+export function belowThresholdSql(fallback: number) {
+  return sql`(
+    (${parts.minStock} is null and ${parts.stock} <= ${fallback})
+    or (${parts.minStock} > 0 and ${parts.stock} <= ${parts.minStock})
+  )`;
+}
+
 export async function listLowStockParts(options?: {
   branchId?: string;
   fallbackThreshold?: number;
+  /** Chỉ lấy N dòng tồn thấp nhất — email cảnh báo không cần liệt kê cả kho. */
+  limit?: number;
 }): Promise<LowStockPart[]> {
   const fallback = options?.fallbackThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
 
-  const conditions = [sql`${parts.stock} <= coalesce(${parts.minStock}, ${fallback})`];
+  const conditions = [belowThresholdSql(fallback)];
   if (options?.branchId) conditions.push(eq(parts.branchId, options.branchId));
 
   const rows = await db
@@ -318,7 +341,8 @@ export async function listLowStockParts(options?: {
     })
     .from(parts)
     .where(and(...conditions))
-    .orderBy(asc(parts.stock));
+    .orderBy(asc(parts.stock), asc(parts.code))
+    .limit(options?.limit ?? 100_000);
 
   return rows.map((row) => ({
     id: row.id,
@@ -331,4 +355,16 @@ export async function listLowStockParts(options?: {
     threshold: row.minStock ?? fallback,
     location: row.location,
   }));
+}
+
+/** Đếm số phụ tùng dưới ngưỡng mà không kéo dữ liệu về — cho số tổng trong email/thông báo. */
+export async function countLowStockParts(options?: { branchId?: string; fallbackThreshold?: number }) {
+  const fallback = options?.fallbackThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  const conditions = [belowThresholdSql(fallback)];
+  if (options?.branchId) conditions.push(eq(parts.branchId, options.branchId));
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(parts)
+    .where(and(...conditions));
+  return row?.n ?? 0;
 }

@@ -1,6 +1,6 @@
 import { db } from "@/server/db/client";
 import { automationRules, branches, employees, parts, services } from "@/server/db/schema";
-import { DEFAULT_LOW_STOCK_THRESHOLD } from "@/server/domain";
+import { DEFAULT_LOW_STOCK_THRESHOLD, type AutomationRuleType } from "@/server/domain";
 import { listBranches } from "@/server/store/branches";
 
 const SEED_SERVICES = [
@@ -97,13 +97,24 @@ export async function seedInitialData() {
 // Kiểm tra theo TỪNG loại quy tắc (không phải theo bảng rỗng hay chưa) để tự bù đúng phần
 // còn thiếu mỗi lần server khởi động, mà không tạo trùng nếu đã tồn tại.
 async function seedNewAutomationRules() {
+  // Bổ sung 17/09/2026: `revenue_report` và `order_status_update` có workflow mẫu từ đầu
+  // nhưng chưa bao giờ được seed thành quy tắc, nên trang Tự động hoá không bật/tắt hay
+  // theo dõi được chúng. `morning_brief` và `accounting_digest` là hai bản tin mới.
   const NEW_RULES: Array<{
     name: string;
-    type: "awaiting_acceptance_reminder" | "unpaid_invoice_report";
-    thresholdDays: number;
+    type: AutomationRuleType;
+    thresholdDays: number | null;
+    thresholdQty?: number | null;
   }> = [
     { name: "Nhắc chờ nghiệm thu quá hạn", type: "awaiting_acceptance_reminder", thresholdDays: 2 },
     { name: "Báo cáo công nợ", type: "unpaid_invoice_report", thresholdDays: 7 },
+    { name: "Báo cáo doanh thu ngày", type: "revenue_report", thresholdDays: null },
+    { name: "Báo tiến độ sửa chữa cho khách", type: "order_status_update", thresholdDays: null },
+    // Bản tin sáng: ngưỡng ngày = lệnh "chờ nghiệm thu" quá bao lâu thì đưa vào bản tin;
+    // ngưỡng số lượng = liệt kê tối đa bao nhiêu phụ tùng sắp hết (phần còn lại chỉ đếm).
+    { name: "Bản tin sáng cho quản lý xưởng", type: "morning_brief", thresholdDays: 2, thresholdQty: 10 },
+    // Tổng hợp kế toán: ngưỡng ngày = hoá đơn mua hàng "chưa nhận" bao lâu thì coi là quá hạn.
+    { name: "Tổng hợp tuần cho kế toán", type: "accounting_digest", thresholdDays: 15 },
   ];
 
   const existingTypes = new Set(

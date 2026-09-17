@@ -150,6 +150,8 @@ export const AUTOMATION_RULE_TYPES = [
   "awaiting_acceptance_reminder", // lệnh "chờ nghiệm thu" quá lâu chưa thấy khách tới
   "unpaid_invoice_report", // hoá đơn chưa thu đủ quá lâu — báo nội bộ, không gửi khách
   "revenue_report", // báo cáo doanh thu định kỳ
+  "morning_brief", // bản tin sáng gộp mọi việc cần xử lý trong ngày — thay cho 4 email rời
+  "accounting_digest", // tổng hợp tuần cho kế toán: hoá đơn mua chưa nhận, hàng đã xuất chưa lập HĐ
 ] as const;
 export type AutomationRuleType = (typeof AUTOMATION_RULE_TYPES)[number];
 
@@ -161,6 +163,8 @@ export const AUTOMATION_RULE_LABELS: Record<AutomationRuleType, string> = {
   awaiting_acceptance_reminder: "Nhắc chờ nghiệm thu quá hạn",
   unpaid_invoice_report: "Báo cáo công nợ",
   revenue_report: "Báo cáo doanh thu định kỳ",
+  morning_brief: "Bản tin sáng cho quản lý xưởng",
+  accounting_digest: "Tổng hợp tuần cho kế toán",
 };
 
 // Ngưỡng tồn kho mặc định khi phụ tùng không đặt `minStock` riêng.

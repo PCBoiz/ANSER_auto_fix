@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { handle } from "@/server/api";
+import { detectRunSource, recordRuleRun, resolveRuleConfig, skippedPayload } from "@/server/automation/rules";
 import { checkInternalToken } from "@/server/internalAuth";
 import { getCompanySettings } from "@/server/store/settings";
 import { listVehiclesDueForService } from "@/server/store/vehicles";
@@ -12,24 +13,30 @@ const DUE_REASON_LABELS = {
   both: "tới hạn theo cả thời gian và số km",
 } as const;
 
-// GET /api/n8n/internal/due-for-service?days=7&km=500
+// GET /api/n8n/internal/due-for-service
 //
-// Trả kèm `contactable` (có email để nhắc được hay không) để workflow lọc thẳng, thay vì
-// phải viết lại logic đó trong node Code — và để email tổng gửi cho gara nói rõ còn bao
-// nhiêu khách phải gọi điện tay.
+// Ngưỡng ngày/km đọc từ quy tắc `maintenance_reminder` trong DB — tham số `?days=&km=` trên
+// URL chỉ có tác dụng khi kèm `override=1` (xem automation/rules.ts). Trước đây workflow
+// truyền cứng `?days=7&km=500`, nên sửa ngưỡng trên trang Tự động hoá không có tác dụng.
+//
+// Trả kèm `contactable` (có email để nhắc được hay không) để workflow lọc thẳng, và để email
+// tổng gửi cho gara nói rõ còn bao nhiêu khách phải gọi điện tay.
 export async function GET(request: Request) {
   return handle(async () => {
     const denied = checkInternalToken(request);
     if (denied) return denied;
 
-    const url = new URL(request.url);
-    const days = Number(url.searchParams.get("days") ?? 7);
-    const km = Number(url.searchParams.get("km") ?? 500);
+    const source = detectRunSource(request);
+    const rule = await resolveRuleConfig("maintenance_reminder", request, { days: 7, km: 500 });
+    if (!rule.enabled) {
+      await recordRuleRun("maintenance_reminder", { status: "skipped", summary: "Quy tắc đang tắt", source });
+      return NextResponse.json(skippedPayload("maintenance_reminder"));
+    }
 
     const [vehicles, company] = await Promise.all([
       listVehiclesDueForService({
-        withinDays: Number.isFinite(days) ? days : 7,
-        withinKm: Number.isFinite(km) ? km : 500,
+        withinDays: rule.thresholdDays ?? 7,
+        withinKm: rule.thresholdKm ?? 500,
       }),
       getCompanySettings(),
     ]);
@@ -48,11 +55,20 @@ export async function GET(request: Request) {
       contactable: Boolean(vehicle.customerEmail),
     }));
 
+    const contactableCount = items.filter((item) => item.contactable).length;
+    await recordRuleRun("maintenance_reminder", {
+      status: "fetched",
+      summary: `${items.length} xe tới hạn (${contactableCount} có email) — ngưỡng ${rule.thresholdDays} ngày / ${rule.thresholdKm} km`,
+      source,
+    });
+
     return NextResponse.json({
       company_name: company.name,
       company_email: company.email ?? process.env.N8N_NOTIFY_EMAIL ?? null,
+      threshold_days: rule.thresholdDays,
+      threshold_km: rule.thresholdKm,
       count: items.length,
-      contactable_count: items.filter((item) => item.contactable).length,
+      contactable_count: contactableCount,
       items,
     });
   });

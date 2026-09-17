@@ -9,6 +9,8 @@ import {
   services,
   users,
 } from "@/server/db/schema";
+import { DEFAULT_LOW_STOCK_THRESHOLD } from "@/server/domain";
+import { belowThresholdSql } from "@/server/store/parts";
 
 // "Kiểm tra sẵn sàng vận hành" — trả lời một câu hỏi duy nhất: hệ thống này đã dùng được
 // cho gara thật chưa, hay còn dữ liệu mẫu và cấu hình bỏ trống?
@@ -87,7 +89,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       partsNoPrice: sql<number>`(select count(*) from ${parts} where ${parts.price} = 0)::int`,
       partsNoThreshold: sql<number>`(select count(*) from ${parts} where ${parts.minStock} is null)::int`,
       partsNoCost: sql<number>`(select count(*) from ${parts} where ${parts.cost} is null)::int`,
-      lowStockRows: sql<number>`(select count(*) from ${parts} where ${parts.stock} <= coalesce(${parts.minStock}, 5))::int`,
+      lowStockRows: sql<number>`(select count(*) from ${parts} where ${belowThresholdSql(DEFAULT_LOW_STOCK_THRESHOLD)})::int`,
       demoParts: sql<number>`(select count(*) from ${parts} where ${parts.code} in ${DEMO_PART_CODES})::int`,
       demoServices: sql<number>`(select count(*) from ${services} where ${services.code} in ${DEMO_SERVICE_CODES})::int`,
       testEmployees: sql<number>`(select count(*) from ${employees} where ${employees.name} ilike '%(test)%')::int`,
@@ -95,7 +97,9 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       branchesNoSpecialty: sql<number>`(select count(*) from ${branches} where ${branches.specialty} is null)::int`,
       rulesTotal: sql<number>`(select count(*) from ${automationRules})::int`,
       rulesUnlinked: sql<number>`(select count(*) from ${automationRules} where ${automationRules.enabled} and ${automationRules.n8nWorkflowId} is null)::int`,
-      rulesNeverRan: sql<number>`(select count(*) from ${automationRules} where ${automationRules.enabled} and ${automationRules.lastRunAt} is null)::int`,
+      // "Chưa từng chạy" = chưa có nhịp nào từ nguồn LỊCH (n8n/cron). Lần gọi thử bằng tay
+      // không được tính — xem SCHEDULED_SOURCES trong automation/rules.ts.
+      rulesNeverRan: sql<number>`(select count(*) from ${automationRules} where ${automationRules.enabled} and (${automationRules.lastRunAt} is null or ${automationRules.lastRunSource} not in ('schedule', 'n8n', 'cron')))::int`,
       rulesStale: sql<number>`(select count(*) from ${automationRules} where ${automationRules.enabled} and ${automationRules.lastRunAt} < now() - interval '48 hours')::int`,
     })
     .from(sql`(select 1) as _`);

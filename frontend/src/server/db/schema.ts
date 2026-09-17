@@ -100,6 +100,10 @@ export const users = pgTable(
     // người dùng tự đặt mật khẩu mới. Trước đây mật khẩu tạm sống mãi mãi — 3 tài khoản
     // test trong repo này là bằng chứng.
     mustChangePassword: boolean("must_change_password").notNull().default(false),
+    // Mốc người dùng mở chuông thông báo lần cuối. Thông báo tạo SAU mốc này là "chưa đọc".
+    // Một cột thay cho bảng nối users×notifications: gara có vài tài khoản, và "đã xem tới
+    // đâu" là đủ — không ai cần đánh dấu đọc từng thông báo một.
+    notificationsSeenAt: timestamp("notifications_seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("users_employee_id_idx").on(table.employeeId)],
@@ -642,3 +646,36 @@ export const attendanceLogs = pgTable("attendance_logs", {
 }, (table) => [
   index("attendance_logs_employee_time_idx").on(table.employeeId, table.clockInAt),
 ]);
+
+// ---------------------------------------------------------------------------
+// Thông báo trong app (chuông ở Topbar)
+// ---------------------------------------------------------------------------
+
+// Thông báo nội bộ do bộ lập lịch của app sinh ra (`/api/cron/automation`).
+//
+// Vì sao cần, khi đã có n8n gửi email: hôm 17/09/2026 kiểm tra thì Docker không chạy, tức là
+// KHÔNG một cảnh báo nào tới được ai — mà trang Tự động hoá vẫn hiện 5 quy tắc "Đang bật".
+// Mọi cảnh báo quan trọng đang phụ thuộc vào một cụm Docker chạy trên máy dev. Chuông thông
+// báo chạy ngay trong app (cùng tiến trình, cùng DB), nên vẫn hoạt động khi n8n, SMTP hay
+// Docker đều hỏng. n8n vẫn là kênh gửi ra ngoài (email khách, email quản lý); đây là kênh
+// không thể hỏng riêng lẻ.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // "morning_brief" | "accounting_digest" | "readiness" — nguồn sinh ra thông báo.
+    kind: text("kind").notNull(),
+    // "high" = cần xử lý hôm nay; "normal" = nên biết.
+    severity: text("severity").notNull().default("normal"),
+    // Ai thấy: "manager" (quản lý + admin), "accountant" (thêm luồng kế toán), "all".
+    audience: text("audience").notNull().default("manager"),
+    title: text("title").notNull(),
+    body: text("body"),
+    href: text("href"),
+    // Chống trùng: cùng một việc trong cùng một ngày chỉ tạo MỘT thông báo, dù cron chạy lại
+    // bao nhiêu lần (Vercel Cron có thể gọi lặp khi retry). Dạng `kind:mục:yyyy-mm-dd`.
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("notifications_created_at_idx").on(table.createdAt)],
+);

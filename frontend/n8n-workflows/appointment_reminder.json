@@ -3,22 +3,42 @@
   "nodes": [
     {
       "parameters": {
-        "rule": { "interval": [{ "field": "days", "daysInterval": 1, "triggerAtHour": 17 }] }
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 17
+            }
+          ]
+        }
       },
       "id": "ar-trigger",
       "name": "Mỗi ngày 17h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [180, 300]
+      "position": [
+        180,
+        300
+      ]
     },
     {
       "parameters": {
         "method": "GET",
-        "url": "http://host.docker.internal:3000/api/n8n/internal/appointments?hours=24",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/appointments",
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "X-Internal-Token", "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN" }]
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
         },
         "options": {}
       },
@@ -26,7 +46,10 @@
       "name": "Lấy lịch hẹn 24h tới",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [400, 300]
+      "position": [
+        400,
+        300
+      ]
     },
     {
       "parameters": {
@@ -37,19 +60,30 @@
       "name": "Tách từng lịch hẹn",
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
-      "position": [620, 200]
+      "position": [
+        620,
+        200
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "boolean": [{ "value1": "={{ $json.contactable }}", "value2": true }]
+          "boolean": [
+            {
+              "value1": "={{ $json.contactable }}",
+              "value2": true
+            }
+          ]
         }
       },
       "id": "ar-if-contactable",
       "name": "Khách có email?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [840, 200]
+      "position": [
+        840,
+        200
+      ]
     },
     {
       "parameters": {
@@ -60,7 +94,10 @@
       "name": "Soạn thư nhắc",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1060, 120]
+      "position": [
+        1060,
+        120
+      ]
     },
     {
       "parameters": {
@@ -74,19 +111,31 @@
       "name": "Gửi khách hàng",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [1280, 120]
+      "position": [
+        1280,
+        120
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "number": [{ "value1": "={{ $json.count }}", "operation": "larger", "value2": 0 }]
+          "number": [
+            {
+              "value1": "={{ $json.count }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
         }
       },
       "id": "ar-if-count",
       "name": "Có lịch hẹn?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [620, 440]
+      "position": [
+        620,
+        440
+      ]
     },
     {
       "parameters": {
@@ -97,19 +146,30 @@
       "name": "Soạn bảng phân công",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [840, 440]
+      "position": [
+        840,
+        440
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [{ "value1": "={{ $json.email_to }}", "operation": "isNotEmpty" }]
+          "string": [
+            {
+              "value1": "={{ $json.email_to }}",
+              "operation": "isNotEmpty"
+            }
+          ]
         }
       },
       "id": "ar-if-company-email",
       "name": "Gara có email?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [1060, 440]
+      "position": [
+        1060,
+        440
+      ]
     },
     {
       "parameters": {
@@ -123,32 +183,156 @@
       "name": "Gửi gara",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [1280, 440]
+      "position": [
+        1280,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/heartbeat",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"appointment_reminder\", \"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "hb-appointment_reminder",
+      "name": "Báo app: đã gửi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1520,
+        440
+      ],
+      "executeOnce": true
     }
   ],
   "connections": {
-    "Mỗi ngày 17h": { "main": [[{ "node": "Lấy lịch hẹn 24h tới", "type": "main", "index": 0 }]] },
-    "Lấy lịch hẹn 24h tới": {
+    "Mỗi ngày 17h": {
       "main": [
         [
-          { "node": "Tách từng lịch hẹn", "type": "main", "index": 0 },
-          { "node": "Có lịch hẹn?", "type": "main", "index": 0 }
+          {
+            "node": "Lấy lịch hẹn 24h tới",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
-    "Tách từng lịch hẹn": { "main": [[{ "node": "Khách có email?", "type": "main", "index": 0 }]] },
+    "Lấy lịch hẹn 24h tới": {
+      "main": [
+        [
+          {
+            "node": "Tách từng lịch hẹn",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Có lịch hẹn?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tách từng lịch hẹn": {
+      "main": [
+        [
+          {
+            "node": "Khách có email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Khách có email?": {
-      "main": [[{ "node": "Soạn thư nhắc", "type": "main", "index": 0 }], []]
+      "main": [
+        [
+          {
+            "node": "Soạn thư nhắc",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
     },
-    "Soạn thư nhắc": { "main": [[{ "node": "Gửi khách hàng", "type": "main", "index": 0 }]] },
+    "Soạn thư nhắc": {
+      "main": [
+        [
+          {
+            "node": "Gửi khách hàng",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Có lịch hẹn?": {
-      "main": [[{ "node": "Soạn bảng phân công", "type": "main", "index": 0 }], []]
+      "main": [
+        [
+          {
+            "node": "Soạn bảng phân công",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
     },
-    "Soạn bảng phân công": { "main": [[{ "node": "Gara có email?", "type": "main", "index": 0 }]] },
+    "Soạn bảng phân công": {
+      "main": [
+        [
+          {
+            "node": "Gara có email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Gara có email?": {
-      "main": [[{ "node": "Gửi gara", "type": "main", "index": 0 }], []]
+      "main": [
+        [
+          {
+            "node": "Gửi gara",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Gửi gara": {
+      "main": [
+        [
+          {
+            "node": "Báo app: đã gửi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

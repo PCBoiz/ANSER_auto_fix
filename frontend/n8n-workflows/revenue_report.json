@@ -3,13 +3,24 @@
   "nodes": [
     {
       "parameters": {
-        "rule": { "interval": [{ "field": "days", "daysInterval": 1, "triggerAtHour": 20 }] }
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 20
+            }
+          ]
+        }
       },
       "id": "rr-trigger",
       "name": "Mỗi ngày 20h",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [180, 300]
+      "position": [
+        180,
+        300
+      ]
     },
     {
       "parameters": {
@@ -18,7 +29,16 @@
         "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
-          "parameters": [{ "name": "X-Internal-Token", "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN" }]
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
         },
         "options": {}
       },
@@ -26,7 +46,10 @@
       "name": "Lấy doanh thu",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
-      "position": [400, 300]
+      "position": [
+        400,
+        300
+      ]
     },
     {
       "parameters": {
@@ -37,19 +60,30 @@
       "name": "Soạn báo cáo",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [620, 300]
+      "position": [
+        620,
+        300
+      ]
     },
     {
       "parameters": {
         "conditions": {
-          "string": [{ "value1": "={{ $json.email_to }}", "operation": "isNotEmpty" }]
+          "string": [
+            {
+              "value1": "={{ $json.email_to }}",
+              "operation": "isNotEmpty"
+            }
+          ]
         }
       },
       "id": "rr-if-email",
       "name": "Có email nhận?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [840, 300]
+      "position": [
+        840,
+        300
+      ]
     },
     {
       "parameters": {
@@ -63,17 +97,105 @@
       "name": "Gửi Email",
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [1060, 220]
+      "position": [
+        1060,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/heartbeat",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"revenue_report\", \"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "hb-revenue_report",
+      "name": "Báo app: đã gửi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1300,
+        220
+      ],
+      "executeOnce": true
     }
   ],
   "connections": {
-    "Mỗi ngày 20h": { "main": [[{ "node": "Lấy doanh thu", "type": "main", "index": 0 }]] },
-    "Lấy doanh thu": { "main": [[{ "node": "Soạn báo cáo", "type": "main", "index": 0 }]] },
-    "Soạn báo cáo": { "main": [[{ "node": "Có email nhận?", "type": "main", "index": 0 }]] },
+    "Mỗi ngày 20h": {
+      "main": [
+        [
+          {
+            "node": "Lấy doanh thu",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy doanh thu": {
+      "main": [
+        [
+          {
+            "node": "Soạn báo cáo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Soạn báo cáo": {
+      "main": [
+        [
+          {
+            "node": "Có email nhận?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Có email nhận?": {
-      "main": [[{ "node": "Gửi Email", "type": "main", "index": 0 }], []]
+      "main": [
+        [
+          {
+            "node": "Gửi Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Gửi Email": {
+      "main": [
+        [
+          {
+            "node": "Báo app: đã gửi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }
