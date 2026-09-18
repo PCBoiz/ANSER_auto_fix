@@ -1,4 +1,5 @@
 import Link from "next/link";
+import RecheckButton from "@/components/dashboard/RecheckButton";
 import { PageHeader } from "@/components/ui/PageShell";
 import { getReadinessReport, type ReadinessItem } from "@/server/readiness";
 import { formatDateTime } from "@/lib/format";
@@ -124,9 +125,13 @@ function LoopPanel({ stats, tick, now }: { stats: LoopStats; tick: WatchdogTick 
           tone="text-white"
         />
       </div>
+      <div className="mt-4">
+        <RecheckButton />
+      </div>
       {!tick && (
         <p className="mt-4 text-xs text-zinc-500">
-          Chưa có lịch nào gọi bộ canh gác, nên sự cố chỉ được đo lại khi có người mở trang này. Bản tự
+          Chưa có lịch nào gọi bộ canh gác, nên sự cố chỉ được đo lại khi có người mở trang này hoặc bấm
+          &ldquo;Kiểm tra lại ngay&rdquo;. Bản tự
           host: đặt <code className="rounded bg-black/40 px-1">INTERNAL_SCHEDULER=true</code> rồi khởi
           động lại. Trên Vercel: lịch trong <code className="rounded bg-black/40 px-1">vercel.json</code> tự chạy mỗi sáng.
         </p>

@@ -528,7 +528,7 @@ và đã kiểm chứng":
 |---|---|---|---|
 | ① Thông báo không bao giờ "đóng" | Khoá `readiness:<id>:<ngày>`: sửa xong vẫn còn thông báo hôm nay; chưa sửa thì mỗi sáng thêm một bản | Mỗi sự cố **một** bản ghi, khoá không kèm ngày. Lần đo sau không còn thấy → đóng (`resolution = verified`); tái phát → mở lại. Việc máy tự sửa ghi `auto`. Bản tin cũ bị bản mới thay → `superseded` (ẩn) | `store/notifications.ts` (`syncIncidents`), `lib/opsLoop.ts` (`planIncidents`), migration 0008 |
 | ② Workflow import bằng tay | Sửa mẫu trong git → nhớ vào n8n → import → dán token vào từng node → gán SMTP từng node → bật Active | App tự đẩy mẫu lên n8n qua Public API, điền token/địa chỉ app/SMTP/email cảnh báo, phát hiện lệch bằng vân tay nội dung | `lib/n8nTemplates.ts`, `automation/n8nSync.ts` |
-| ③ App chết thì không ai biết; n8n chết chỉ biết sau "48 giờ" chung chung | Chuông nằm trong app — app chết thì chuông chết | Canh gác **hai chiều**: app canh n8n (nhịp kỳ vọng riêng từng quy tắc: 8 giờ cho lịch 6 giờ, 26 giờ cho lịch ngày, 8 ngày cho lịch tuần); n8n canh app (workflow "Canh gác app" hỏi `/api/health` mỗi 30 phút, email khi hỏng, nhắc mỗi 3 giờ, **email khi đã hoạt động lại**) | `automation/watchdog.ts`, `api/health`, `n8n-workflows/app_watchdog.json` |
+| ③ App chết thì không ai biết; n8n chết chỉ biết sau "48 giờ" chung chung | Chuông nằm trong app — app chết thì chuông chết | Canh gác **hai chiều**: app canh n8n (nhịp kỳ vọng riêng từng quy tắc: 8 giờ cho lịch 6 giờ, 26 giờ cho lịch ngày, 8 ngày cho lịch tuần); n8n canh app (workflow "Canh gác app" hỏi `/api/health` mỗi 30 phút, email khi hỏng, nhắc mỗi 3 giờ, **email khi đã hoạt động lại**). App còn canh chính người canh: mỗi lần workflow đó hỏi theo lịch (có token), app ghi mốc; im quá 2 giờ → sự cố mức cao — n8n sống mà riêng workflow canh gác bị tắt thì trước đây lần app chết kế tiếp sẽ không có email nào | `automation/watchdog.ts`, `api/health`, `n8n-workflows/app_watchdog.json` |
 | ④ Tự host không có lịch | Chỉ Vercel Cron gọi được `/api/cron/automation` | Lịch trong tiến trình (`INTERNAL_SCHEDULER=true`), giành khe trong DB nên hai tiến trình không chạy trùng, có bắt kịp khi máy tắt buổi sáng | `automation/scheduler.ts`, `store/systemState.ts`, migration 0010 |
 
 ```
@@ -543,7 +543,8 @@ và đã kiểm chứng":
             └─ cần phán đoán ─► CHUÔNG (1 bản ghi/sự cố) ─► NGƯỜI: bấm "Đồng bộ workflow",│
                                                             sửa dữ liệu, bật Docker…      │
                                                                      │                    │
-  KIỂM CHỨNG  lượt sau đo lại (hoặc ngay khi mở trang Kiểm tra vận hành / bấm Đồng bộ)    │
+  KIỂM CHỨNG  lượt sau đo lại (hoặc ngay: mở trang Kiểm tra vận hành, bấm "Kiểm tra lại   │
+             ngay", bấm "Đồng bộ workflow")                                               │
             └─ không còn thấy → ĐÓNG "đã khắc phục sau X" ────────────────────────────────┘
 
   Ngoài vòng: n8n hỏi /api/health mỗi 30 phút — app chết, hoặc chính vòng trên ngừng chạy
@@ -576,7 +577,7 @@ giờ". Lịch nội bộ có nhịp riêng (`system_state.watchdog:lastTick`), 
 
 ### 12.1 Cách đã kiểm tra
 
-- **168 test** (thêm 78): đối soát sự cố, nhịp kỳ vọng từng quy tắc, khe lịch theo giờ Việt Nam
+- **170 test** (thêm 80): đối soát sự cố, nhịp kỳ vọng từng quy tắc, khe lịch theo giờ Việt Nam
   (kể cả bắt kịp và ranh giới nửa đêm UTC/VN), ranh giới tự sửa/người quyết, gộp "đã tự sửa",
   render cả 10 file mẫu (không sót placeholder, mọi node Email có SMTP). Riêng node Code của
   workflow "Canh gác app" được **chạy thật** trong test với đồng hồ giả: báo lần đầu, im 2 giờ 30,

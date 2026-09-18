@@ -1,6 +1,6 @@
 import { db } from "@/server/db/client";
 import { automationRules } from "@/server/db/schema";
-import { findSilentRules, n8nIncidents, type IncidentInput } from "@/lib/opsLoop";
+import { findSilentRules, n8nIncidents, n8nWatchdogSilence, type IncidentInput } from "@/lib/opsLoop";
 import { syncN8nWorkflows, type SyncReport } from "@/server/automation/n8nSync";
 import type { RunSource } from "@/server/automation/rules";
 import { isN8nApiConfigured } from "@/server/n8nApi";
@@ -11,7 +11,7 @@ import {
   syncIncidents,
   type IncidentSyncResult,
 } from "@/server/store/notifications";
-import { setSystemState } from "@/server/store/systemState";
+import { getSystemState, setSystemState } from "@/server/store/systemState";
 
 // Bộ canh gác — nửa "trong app" của vòng lặp khép kín. Mỗi lượt:
 //
@@ -24,6 +24,8 @@ import { setSystemState } from "@/server/store/systemState";
 // phút, email khi app chết HOẶC khi lượt canh gác này ngừng chạy. Hai bên canh nhau.
 
 export const WATCHDOG_TICK_KEY = "watchdog:lastTick";
+/** Lần cuối workflow "Canh gác app" bên n8n hỏi /api/health theo lịch — ghi ở route health. */
+export const N8N_WATCHDOG_SEEN_KEY = "watchdog:n8nLastSeen";
 
 export type WatchdogTick = { at: string; source: RunSource; summary: string };
 
@@ -94,6 +96,15 @@ export async function runWatchdog(source: RunSource, sync?: SyncReport): Promise
       const report = sync ?? (await syncN8nWorkflows({ trigger: "watchdog" }));
       const out = n8nIncidents(report);
       incidents.push(...out.incidents);
+
+      // n8n không trả lời thì đã có sự cố riêng — không báo thêm "canh gác ngừng hỏi" cho
+      // cùng một nguyên nhân. Chưa có email nhận thì workflow canh gác được để tắt có chủ đích.
+      if (report.reachable && report.alertEmailSet) {
+        const seen = await getSystemState<{ at: string }>(N8N_WATCHDOG_SEEN_KEY);
+        const silence = n8nWatchdogSilence(seen ? new Date(seen.value.at) : null, now);
+        if (silence) incidents.push(silence);
+      }
+
       if (!sync) {
         // Khoá kèm thời điểm: mỗi lượt tự sửa là một bản ghi riêng, nên đếm được hệ thống đã
         // phải can thiệp bao nhiêu lần — một workflow bị ai đó xoá mỗi tuần sẽ lộ ra ở đây.

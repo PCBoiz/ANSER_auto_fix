@@ -335,3 +335,32 @@ export function n8nIncidents(sync: SyncSummary): { incidents: IncidentInput[]; a
 
   return { incidents, autoFixes };
 }
+
+// ---------------------------------------------------------------------------
+// Người canh gác có còn canh không
+// ---------------------------------------------------------------------------
+
+/** Workflow "Canh gác app" hỏi mỗi 30 phút; im 2 giờ = lỡ 4 lần liền, không còn là trễ. */
+export const N8N_WATCHDOG_MAX_SILENCE_MS = 2 * HOUR;
+
+/**
+ * Workflow canh gác app bên n8n có còn hỏi `/api/health` không.
+ *
+ * Canh gác hai chiều chỉ có nghĩa khi CẢ HAI chiều còn sống. App đã biết n8n chết (API không
+ * trả lời) — nhưng n8n sống mà riêng workflow canh gác bị tắt/hỏng thì trước đây không ai
+ * biết, và lần app chết kế tiếp sẽ không có email nào. Chỉ báo khi ĐÃ TỪNG thấy nó hỏi: chưa
+ * bao giờ thấy là việc cài đặt (chưa đồng bộ), không phải hồi quy.
+ */
+export function n8nWatchdogSilence(lastSeen: Date | null, now: Date): IncidentInput | null {
+  if (!lastSeen) return null;
+  const silent = now.getTime() - lastSeen.getTime();
+  if (silent <= N8N_WATCHDOG_MAX_SILENCE_MS) return null;
+  return {
+    key: "watchdog:n8n:app-watchdog-silent",
+    severity: "high",
+    title: "Workflow “Canh gác app” trên n8n đã ngừng hỏi app",
+    body: `Lần cuối n8n hỏi /api/health cách đây ${formatDuration(silent)}. Nếu app chết lúc này sẽ không ai nhận được email. Kiểm tra workflow còn Active và lịch sử chạy trong n8n, hoặc bấm “Đồng bộ workflow”.`,
+    href: "/dashboard/automation",
+  };
+}
+

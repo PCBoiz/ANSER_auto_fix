@@ -4,6 +4,7 @@ import {
   findSilentRules,
   formatDuration,
   n8nIncidents,
+  n8nWatchdogSilence,
   overallHealth,
   type SyncSummary,
   planIncidents,
@@ -186,3 +187,19 @@ describe("n8nIncidents — việc cần người vs việc đã tự sửa", () 
     expect(out.incidents.find((i) => i.key === "watchdog:n8n:sync-error")?.body).toContain("X. Lỗi đầu tiên: 401");
   });
 });
+
+describe("n8nWatchdogSilence — canh người canh gác", () => {
+  const now = new Date("2026-09-18T12:00:00Z");
+  const minutesAgo = (m: number) => new Date(now.getTime() - m * 60_000);
+
+  it("chưa từng thấy n8n hỏi -> không báo (việc cài đặt, không phải hồi quy)", () => {
+    expect(n8nWatchdogSilence(null, now)).toBeNull();
+  });
+  it("lỡ 1–3 lần (tới 2 giờ) -> chưa báo; quá 2 giờ -> báo mức cao", () => {
+    expect(n8nWatchdogSilence(minutesAgo(120), now)).toBeNull();
+    const hit = n8nWatchdogSilence(minutesAgo(125), now);
+    expect(hit?.severity).toBe("high");
+    expect(hit?.body).toContain("2 giờ");
+  });
+});
+

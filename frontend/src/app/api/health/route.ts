@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { db } from "@/server/db/client";
 import { notifications } from "@/server/db/schema";
 import { overallHealth, watchdogCheck, type HealthCheck } from "@/lib/opsLoop";
-import { WATCHDOG_TICK_KEY, type WatchdogTick } from "@/server/automation/watchdog";
+import { N8N_WATCHDOG_SEEN_KEY, WATCHDOG_TICK_KEY, type WatchdogTick } from "@/server/automation/watchdog";
 import { INTERNAL_TOKEN_HEADER } from "@/server/internalAuth";
-import { getSystemState } from "@/server/store/systemState";
+import { getSystemState, setSystemState } from "@/server/store/systemState";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +99,15 @@ export async function GET(request: Request) {
   }
 
   const status = overallHealth(checks);
-  const body = canSeeDetails(request)
+  const trusted = canSeeDetails(request);
+
+  // Nhịp của workflow "Canh gác app" bên n8n: có token + gọi theo LỊCH (không phải bấm
+  // Execute thử). Bộ canh gác trong app đọc mốc này để biết người canh gác còn canh không.
+  if (dbOk && trusted && request.headers.get("x-anser-trigger") === "schedule") {
+    await setSystemState(N8N_WATCHDOG_SEEN_KEY, { at: now.toISOString() }).catch(() => {});
+  }
+
+  const body = trusted
     ? { status, checkedAt: now.toISOString(), checks }
     : { status };
   return NextResponse.json(body, {

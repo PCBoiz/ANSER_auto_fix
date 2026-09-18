@@ -43,7 +43,9 @@ khi đó chỉ cần bấm Đồng bộ.
 lịch chạy lại. n8n canh app: `app_watchdog.json` hỏi `/api/health` mỗi 30 phút; hỏng thì email
 ngay, nhắc lại mỗi 3 giờ (không phải mỗi 30 phút), và email "đã hoạt động lại" kèm thời gian gián
 đoạn khi khoẻ lại. Trạng thái chống trùng nằm trong static data của workflow (chỉ lưu khi chạy
-theo lịch, không lưu khi bấm Execute thử).
+theo lịch, không lưu khi bấm Execute thử). Và app canh ngược lại chính workflow này: mỗi lần nó
+hỏi theo lịch, app ghi mốc; im quá 2 giờ thì lên chuông mức cao (và `/api/health` thành
+`degraded`) — n8n còn sống mà riêng workflow canh gác bị tắt cũng không lọt.
 
 ## 0. Thay đổi ngày 17/09/2026 — đọc trước khi import lại
 
