@@ -34,7 +34,10 @@ async function n8nApiFetch(path: string, init?: RequestInit) {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
-    signal: AbortSignal.timeout(5000),
+    // Đọc: 5 giây — dò "n8n còn sống không" phải nhanh. Ghi: 20 giây — n8n vừa khởi động
+    // tạo workflow mất hơn 5 giây (đo thật: 2/9 lần tạo quá hạn dù n8n vẫn tạo xong), và báo
+    // lỗi cho một việc đã thành công chỉ sinh sự cố giả.
+    signal: AbortSignal.timeout(!init?.method || init.method === "GET" ? 5000 : 20000),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -45,11 +48,11 @@ async function n8nApiFetch(path: string, init?: RequestInit) {
   return res.json().catch(() => ({}));
 }
 
-export async function findSmtpCredentialId(): Promise<string | null> {
+export async function findSmtpCredential(): Promise<{ id: string; name: string } | null> {
   const data = await n8nApiFetch(`/credentials`);
-  const items: Array<{ id: string | number; type: string }> = data.data ?? [];
+  const items: Array<{ id: string | number; name: string; type: string }> = data.data ?? [];
   const smtp = items.find((c) => c.type === "smtp");
-  return smtp ? String(smtp.id) : null;
+  return smtp ? { id: String(smtp.id), name: smtp.name } : null;
 }
 
 export async function listN8nWorkflows(): Promise<Array<{ id: string; name: string; active: boolean }>> {

@@ -13,5 +13,10 @@ export async function register() {
     await ensureDefaultBranch();
     await seedInitialData();
     await ensureCompanySettingsRow();
+
+    if (process.env.INTERNAL_SCHEDULER === "true") {
+      const { startInternalScheduler } = await import("@/server/automation/scheduler");
+      startInternalScheduler();
+    }
   }
 }

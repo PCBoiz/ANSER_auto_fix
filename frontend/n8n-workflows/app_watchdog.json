@@ -1,0 +1,164 @@
+{
+  "name": "ANSER Auto — Canh gác app",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "wd-trigger",
+      "name": "Mỗi 30 phút",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/api/health",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "wd-fetch",
+      "name": "Hỏi sức khoẻ app",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        400,
+        300
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Canh gác app từ PHÍA n8n — nửa còn lại của bộ canh gác hai chiều.\n//\n// App canh n8n (nhịp tim quá hạn -> chuông). Nhưng khi chính app chết thì chuông cũng chết,\n// không ai biết. Workflow này chạy trong n8n, độc lập với app: app không trả lời -> email.\n// Hai bên canh nhau; muốn cả hệ thống im lặng thì phải chết cả hai cùng lúc.\n//\n// Chống spam: app sập 5 giờ không được thành 10 email. Nhớ trạng thái bằng static data của\n// workflow (chỉ lưu khi chạy thật theo lịch, không lưu khi bấm Execute thử):\n//   - lần đầu thấy hỏng -> báo; hỏng tiếp -> nhắc lại mỗi 3 giờ.\n//   - thấy khoẻ lại sau khi đã hỏng -> báo \"đã hoạt động lại\" kèm thời gian gián đoạn.\n//     Đó là bước KHÉP vòng: người nhận không phải tự đi kiểm tra xem đã xong chưa.\nconst r = $json;\nconst code = r.statusCode ?? 0;\nconst body = (r.body && typeof r.body === 'object') ? r.body : {};\nconst status = body.status ?? (r.error ? 'unreachable' : 'unknown');\nconst healthy = code === 200 && status === 'ok';\n\nconst state = $getWorkflowStaticData('global');\nconst now = Date.now();\nconst REMIND_MS = 3 * 60 * 60 * 1000;\nconst fmt = (ms) => { const m = Math.round(ms / 60000); if (m < 60) return m + ' phút'; const h = Math.floor(m / 60), r = m % 60; return h + ' giờ' + (r ? ' ' + r + ' phút' : ''); };\n\nlet send = false, subject = '', html = '';\nconst problems = Array.isArray(body.checks) ? body.checks.filter(c => !c.ok).map(c => '<li>' + c.name + ': ' + c.detail + '</li>').join('') : '';\n\nif (!healthy) {\n  if (!state.downSince) state.downSince = now;\n  if (!state.lastAlertAt || now - state.lastAlertAt > REMIND_MS) {\n    send = true;\n    const first = !state.lastAlertAt;\n    state.lastAlertAt = now;\n    subject = (status === 'degraded' ? '🟠 ANSER Auto: vòng tự động đang hỏng' : '🔴 ANSER Auto không phản hồi')\n      + (first ? '' : ' (nhắc lại)');\n    html = '<p>Trạng thái: <b>' + status + '</b> (HTTP ' + (code || 'không kết nối được') + ').</p>'\n      + (problems ? '<ul>' + problems + '</ul>' : '')\n      + '<p>Bắt đầu từ ' + new Date(state.downSince).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })\n      + ' — đã ' + fmt(now - state.downSince) + '. Sẽ nhắc lại mỗi 3 giờ và báo khi hoạt động lại.</p>';\n  }\n} else if (state.downSince) {\n  send = true;\n  subject = '🟢 ANSER Auto đã hoạt động lại';\n  html = '<p>Gián đoạn ' + fmt(now - state.downSince) + ', kết thúc lúc '\n    + new Date(now).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) + '.</p>';\n  state.downSince = null;\n  state.lastAlertAt = null;\n}\n\nreturn [{ json: { send, email_to: 'REPLACE_WITH_ALERT_EMAIL', subject, html, status, http: code } }];\n"
+      },
+      "id": "wd-eval",
+      "name": "Đánh giá + chống spam",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.send }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "wd-if",
+      "name": "Cần báo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@anser.auto",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "wd-email",
+      "name": "Gửi Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1060,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Mỗi 30 phút": {
+      "main": [
+        [
+          {
+            "node": "Hỏi sức khoẻ app",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hỏi sức khoẻ app": {
+      "main": [
+        [
+          {
+            "node": "Đánh giá + chống spam",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đánh giá + chống spam": {
+      "main": [
+        [
+          {
+            "node": "Cần báo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cần báo?": {
+      "main": [
+        [
+          {
+            "node": "Gửi Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

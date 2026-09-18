@@ -2,6 +2,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgSequence,
   pgTable,
   text,
@@ -566,6 +567,12 @@ export const automationRules = pgTable("automation_rules", {
   // nội bộ của app chạy thay khi n8n không có. Phân biệt được ba nguồn này mới biết lịch
   // có thật sự hoạt động hay chỉ toàn người bấm tay.
   lastRunSource: text("last_run_source"),
+  // Lần n8n chạy THEO LỊCH gần nhất (không tính lịch nội bộ — xem EXTERNAL_SCHEDULE_SOURCES
+  // trong automation/rules.ts) — tách riêng khỏi `lastRunAt`.
+  // `lastRunAt` bị ghi đè bởi mọi lần chạy, kể cả người bấm "Chạy ngay": lịch chết từ hôm
+  // qua mà sáng nay có người bấm tay thì `lastRunAt` trông vẫn tươi. Bộ canh gác (watchdog)
+  // chỉ tin cột này.
+  lastScheduledRunAt: timestamp("last_scheduled_run_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -672,10 +679,47 @@ export const notifications = pgTable(
     title: text("title").notNull(),
     body: text("body"),
     href: text("href"),
-    // Chống trùng: cùng một việc trong cùng một ngày chỉ tạo MỘT thông báo, dù cron chạy lại
-    // bao nhiêu lần (Vercel Cron có thể gọi lặp khi retry). Dạng `kind:mục:yyyy-mm-dd`.
+    // Chống trùng. Hai kiểu khoá, hai kiểu vòng đời:
+    //   - `kind:mục:yyyy-mm-dd` — bản tin hằng ngày: mỗi ngày một thông báo, tự hết hạn.
+    //   - `kind:mục` (không ngày) — SỰ CỐ: một sự cố = một thông báo, dù kéo dài bao lâu.
+    //     Mở khi phát hiện, `resolvedAt` khi lần kiểm tra sau không còn thấy nó nữa.
     dedupeKey: text("dedupe_key").notNull().unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // --- Vòng đời sự cố (bổ sung 18/09/2026) ---
+    //
+    // Trước đây thông báo chỉ có "tạo". Việc chặn go-live đã xử lý xong vẫn nằm trên chuông;
+    // việc còn tồn đọng thì mỗi sáng tạo một bản mới — 5 ngày chưa sửa là 5 thông báo giống
+    // nhau. Không ai biết việc nào đã xong, việc nào đang chờ. Ba cột dưới khép vòng lặp:
+    // phát hiện -> (tự sửa / người sửa) -> lần kiểm tra sau tự xác nhận -> đóng.
+    //
+    // Lần cuối bộ kiểm tra còn thấy sự cố này. Khác `createdAt` (lần đầu phát hiện).
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    // null = đang mở. Đặt bởi CHÍNH bộ kiểm tra khi sự cố không còn — không phải bởi người
+    // bấm "đã xong": xác nhận phải đến từ dữ liệu, không từ lời tuyên bố.
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    // "auto" = hệ thống tự sửa (vd đồng bộ lại workflow); "verified" = người sửa, bộ kiểm tra
+    // xác nhận. Dùng cho số liệu "bao nhiêu việc tự khép".
+    resolution: text("resolution"),
   },
-  (table) => [index("notifications_created_at_idx").on(table.createdAt)],
+  (table) => [
+    index("notifications_created_at_idx").on(table.createdAt),
+    index("notifications_open_idx").on(table.kind, table.resolvedAt),
+  ],
 );
+
+// ---------------------------------------------------------------------------
+// Trạng thái của chính vòng lặp vận hành
+// ---------------------------------------------------------------------------
+
+// Kho khoá–giá trị nhỏ cho trạng thái HỆ THỐNG (không phải nghiệp vụ): lần canh gác gần
+// nhất, kết quả đồng bộ n8n gần nhất, khoá "việc X đã chạy hôm nay chưa" cho bộ lập lịch
+// nội bộ. Một bảng thay vì mỗi thứ một cột rải vào bảng nghiệp vụ.
+//
+// Khoá "đã chạy hôm nay" phải nằm trong DB chứ không trong RAM: app khởi động lại lúc 7h05
+// không được chạy bản tin sáng lần hai; hai instance chạy song song chỉ một cái được chạy.
+export const systemState = pgTable("system_state", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

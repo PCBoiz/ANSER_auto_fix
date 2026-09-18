@@ -351,7 +351,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       group: "Tự động hoá",
       title: `${missingWorkflows.length} quy tắc đang bật nhưng chưa có workflow trong n8n`,
       detail: `Thiếu: ${missingWorkflows.join("; ")}. Quy tắc bật trong app nhưng không có gì thực thi.`,
-      fix: "Import file JSON mẫu vào n8n (Tự động hoá → Xem mẫu n8n → Tải xuống). App tự nối theo tên workflow, không cần dán ID.",
+      fix: "Bộ canh gác sẽ tự tạo ở lượt tới; hoặc vào Tự động hoá → Đồng bộ workflow để tạo ngay. App tự nối theo tên workflow, không cần dán ID.",
       href: "/dashboard/automation",
     });
   }
@@ -364,7 +364,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       title: `${counts.rulesNeverRan} quy tắc chưa từng chạy lần nào`,
       detail:
         "Chưa có nhịp tim nào gửi về từ workflow. Đây chính là câu hỏi “n8n có tự chạy đúng lịch không” — và câu trả lời hiện tại là chưa xác nhận được.",
-      fix: "Bật n8n (docker compose up -d), import workflow, rồi đợi tới giờ chạy. Cột “Lần chạy gần nhất” sẽ tự có dữ liệu.",
+      fix: "Bật n8n (docker compose up -d), vào Tự động hoá → Đồng bộ workflow, rồi đợi tới giờ chạy. Cột “Lần chạy gần nhất” sẽ tự có dữ liệu.",
       href: "/dashboard/automation",
     });
   } else if (counts.rulesStale > 0) {

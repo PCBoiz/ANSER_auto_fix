@@ -23,6 +23,8 @@ type NotificationItem = {
   body: string | null;
   href: string | null;
   createdAt: string;
+  resolvedAt: string | null;
+  resolution: string | null;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -42,6 +44,22 @@ function relativeTime(iso: string) {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours} giờ trước`;
   return `${Math.round(hours / 24)} ngày trước`;
+}
+
+function durationText(fromIso: string, toIso: string) {
+  const minutes = Math.max(1, Math.round((new Date(toIso).getTime() - new Date(fromIso).getTime()) / 60000));
+  if (minutes < 60) return `${minutes} phút`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} giờ`;
+  return `${Math.round(hours / 24)} ngày`;
+}
+
+// Sự cố đã đóng vẫn hiện (mờ) để người dùng THẤY vòng lặp khép: việc hôm qua báo, hôm nay
+// tự tắt kèm "đã khắc phục sau 3 giờ" — thay vì lặng lẽ biến mất và để người ta tự hỏi.
+function resolutionText(n: NotificationItem) {
+  if (!n.resolvedAt) return null;
+  if (n.resolution === "auto") return `Hệ thống đã tự khắc phục · ${relativeTime(n.resolvedAt)}`;
+  return `Đã khắc phục sau ${durationText(n.createdAt, n.resolvedAt)} · ${relativeTime(n.resolvedAt)}`;
 }
 
 export default function Topbar() {
@@ -313,18 +331,31 @@ export default function Topbar() {
                 ) : (
                   <ul className="max-h-[60vh] divide-y divide-white/[0.04] overflow-y-auto">
                     {notifications.map((n) => {
+                      const resolved = resolutionText(n);
                       const content = (
-                        <div className="flex gap-3 px-4 py-3">
+                        <div className={`flex gap-3 px-4 py-3 ${resolved ? "opacity-60" : ""}`}>
                           <span
                             className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                              n.severity === "high" ? "bg-red-500" : "bg-zinc-600"
+                              resolved ? "bg-emerald-500" : n.severity === "high" ? "bg-red-500" : "bg-zinc-600"
                             }`}
                             aria-hidden
                           />
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-white">{n.title}</p>
-                            {n.body && <p className="mt-0.5 text-xs text-zinc-400">{n.body}</p>}
-                            <p className="mt-1 text-[11px] text-zinc-600">{relativeTime(n.createdAt)}</p>
+                            <p
+                              className={`text-sm font-semibold ${
+                                !resolved
+                                  ? "text-white"
+                                  : n.resolution === "auto"
+                                    ? "text-zinc-300"
+                                    : "text-zinc-300 line-through decoration-zinc-600"
+                              }`}
+                            >
+                              {n.title}
+                            </p>
+                            {n.body && !resolved && <p className="mt-0.5 text-xs text-zinc-400">{n.body}</p>}
+                            <p className={`mt-1 text-[11px] ${resolved ? "text-emerald-400" : "text-zinc-500"}`}>
+                              {resolved ?? relativeTime(n.createdAt)}
+                            </p>
                           </div>
                         </div>
                       );

@@ -10,6 +10,7 @@ import {
   ErrorBanner,
   GhostButton,
   PageHeader,
+  PrimaryButton,
   formatDateTime,
 } from "@/components/ui/PageShell";
 
@@ -39,6 +40,27 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     "7h mỗi ngày, MỘT bản tin gộp xe quá hẹn trả, xe chờ nghiệm thu, đặt hàng ngoài về trễ, lịch hẹn, phụ tùng sắp hết và công nợ. Lên chuông thông báo ngay cả khi n8n không chạy.",
   accounting_digest:
     "8h thứ Hai, gửi kế toán: hoá đơn mua hàng chưa nhận theo nhà cung cấp, hàng đã giao chưa lập hoá đơn, và khách bị ghi nhiều tên. Lên chuông thông báo ngay cả khi n8n không chạy.",
+};
+
+type SyncAction = "created" | "updated" | "unchanged" | "drift-skipped" | "error";
+type SyncResult = {
+  smtpCredentialFound: boolean;
+  items: Array<{ file: string; name: string; action: SyncAction; active: boolean | null; detail?: string }>;
+};
+
+const SYNC_LABELS: Record<SyncAction, string> = {
+  created: "Vừa tạo",
+  updated: "Đã cập nhật theo mẫu",
+  unchanged: "Khớp mẫu",
+  "drift-skipped": "Lệch mẫu",
+  error: "Lỗi",
+};
+const SYNC_TONES: Record<SyncAction, "emerald" | "sky" | "zinc" | "orange" | "red"> = {
+  created: "emerald",
+  updated: "sky",
+  unchanged: "zinc",
+  "drift-skipped": "orange",
+  error: "red",
 };
 
 // Quy tắc có bộ lập lịch NỘI BỘ (chạy trong app, không cần n8n) — có nút "Chạy ngay".
@@ -141,6 +163,7 @@ export default function AutomationPage() {
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -212,6 +235,29 @@ export default function AutomationPage() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.result?.summary ?? data?.message ?? "Chạy không thành công.");
       setNotice(`${rule.name}: ${data.result.summary}. Xem chuông thông báo ở góc trên.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi không xác định.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Phần "người quyết" của vòng lặp: bộ canh gác tự tạo workflow thiếu và tắt theo app, còn
+  // đè bản chỉnh tay và BẬT workflow gửi email (có cái gửi thẳng cho khách) thì chờ ở đây.
+  async function syncN8n() {
+    const ok = window.confirm(
+      "Đồng bộ sẽ đưa mọi workflow về đúng bản mẫu (đè chỉnh sửa tay trong n8n) và BẬT workflow của mọi quy tắc đang bật — kể cả nhắc lịch hẹn, nhắc bảo dưỡng gửi thẳng cho khách. Tiếp tục?",
+    );
+    if (!ok) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/automation/n8n-sync", { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok && !data?.report) throw new Error(data?.message ?? "Đồng bộ không thành công.");
+      setSyncResult(data.report);
+      setNotice(`Đồng bộ xong. Vòng kiểm tra: ${data.loop.summary}.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
@@ -325,6 +371,43 @@ export default function AutomationPage() {
         <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           Đã cấu hình n8n nhưng không gọi được: {n8nError}
         </div>
+      )}
+
+      {n8nConfigured && (
+        <Card className="mb-4 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold">Đồng bộ workflow lên n8n</p>
+              <p className="mt-0.5 text-xs text-zinc-400">
+                Mỗi 30 phút bộ canh gác tự tạo workflow còn thiếu và tắt workflow mà app đã tắt —
+                không cần import tay. Nút này làm nốt phần cần người quyết: đưa workflow đã chỉnh
+                tay về bản mẫu, và <b>bật</b> workflow của các quy tắc đang bật.
+              </p>
+            </div>
+            <PrimaryButton type="button" onClick={syncN8n} disabled={busy}>
+              Đồng bộ workflow
+            </PrimaryButton>
+          </div>
+          {syncResult && (
+            <ul className="mt-3 divide-y divide-white/[0.04] rounded-xl bg-black/20 text-xs">
+              {!syncResult.smtpCredentialFound && (
+                <li className="px-3 py-2 text-orange-300">
+                  n8n chưa có credential SMTP — workflow đã tạo nhưng node Gửi Email sẽ lỗi.
+                </li>
+              )}
+              {syncResult.items.map((item) => (
+                <li key={item.file} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                  <span className="min-w-0 flex-1 text-zinc-300">{item.name.replace(/^ANSER Auto — /, "")}</span>
+                  <Badge tone={SYNC_TONES[item.action]}>{SYNC_LABELS[item.action]}</Badge>
+                  {item.active !== null && (
+                    <Badge tone={item.active ? "emerald" : "zinc"}>{item.active ? "Đang chạy" : "Đang tắt"}</Badge>
+                  )}
+                  {item.detail && <span className="w-full text-zinc-500">{item.detail}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       )}
 
       {loading ? (
@@ -449,9 +532,9 @@ export default function AutomationPage() {
 
                 {!linked && !n8nError && n8nConfigured && rule.expectedWorkflowName && (
                   <p className="mt-2 text-[11px] text-zinc-600">
-                    Chưa import workflow &ldquo;{rule.expectedWorkflowName}&rdquo; vào n8n — bấm
-                    &ldquo;Xem mẫu n8n&rdquo; ở trên để xem/tải file JSON rồi import (n8n UI →
-                    Workflows → Import from File).
+                    Chưa có workflow &ldquo;{rule.expectedWorkflowName}&rdquo; trong n8n — bộ canh
+                    gác sẽ tự tạo ở lượt tới, hoặc bấm &ldquo;Đồng bộ workflow&rdquo; ở trên để tạo
+                    ngay.
                   </p>
                 )}
               </Card>

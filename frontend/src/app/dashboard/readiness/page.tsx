@@ -2,6 +2,10 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageShell";
 import { getReadinessReport, type ReadinessItem } from "@/server/readiness";
 import { formatDateTime } from "@/lib/format";
+import { formatDuration } from "@/lib/opsLoop";
+import { syncReadinessIncidents, WATCHDOG_TICK_KEY, type WatchdogTick } from "@/server/automation/watchdog";
+import { getLoopStats, type LoopStats } from "@/server/store/notifications";
+import { getSystemState } from "@/server/store/systemState";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +27,14 @@ const SEVERITY_STYLE: Record<ReadinessItem["severity"], { label: string; box: st
 // lần lúc tải nên gọi vòng qua HTTP chỉ thêm một chặng mạng cho cùng một dữ liệu.
 export default async function ReadinessPage() {
   const report = await getReadinessReport();
+  // KIỂM CHỨNG ngay lúc người dùng mở trang để xem mình sửa xong chưa: dùng luôn kết quả vừa
+  // đo để đóng sự cố tương ứng trên chuông, không bắt đợi lượt canh gác kế tiếp (30 phút ở bản
+  // tự host, tới một ngày trên Vercel Hobby). Lỗi ở bước này không được làm hỏng trang.
+  await syncReadinessIncidents(report).catch((error) => console.error("[readiness] Không đồng bộ được sự cố:", error));
+  const [stats, tick] = await Promise.all([
+    getLoopStats().catch(() => null),
+    getSystemState<WatchdogTick>(WATCHDOG_TICK_KEY).catch(() => null),
+  ]);
   const groups = ["Bảo mật", "Dữ liệu", "Cấu hình", "Tự động hoá"] as const;
 
   return (
@@ -53,6 +65,8 @@ export default async function ReadinessPage() {
         />
       </div>
 
+      {stats && <LoopPanel stats={stats} tick={tick?.value ?? null} now={report.checkedAt} />}
+
       {report.items.length === 0 ? (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.06] px-6 py-16 text-center">
           <p className="text-lg font-bold text-emerald-300">Không còn mục nào tồn đọng</p>
@@ -82,6 +96,50 @@ export default async function ReadinessPage() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// Vòng lặp có khép thật không — đo bằng số, không bằng lời hứa trong tài liệu.
+function LoopPanel({ stats, tick, now }: { stats: LoopStats; tick: WatchdogTick | null; now: Date }) {
+  const verified = stats.resolved7d - stats.autoResolved7d;
+  const silentMs = tick ? now.getTime() - new Date(tick.at).getTime() : null;
+  return (
+    <section className="mb-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-bold tracking-wide text-zinc-400 uppercase">Vòng tự phát hiện – tự khép</h2>
+        <p className="text-xs text-zinc-500">
+          {tick && silentMs !== null
+            ? `Bộ canh gác chạy lần cuối ${formatDuration(silentMs)} trước (${tick.source === "cron" ? "lịch nội bộ/cron" : tick.source})`
+            : "Bộ canh gác chưa chạy theo lịch lần nào"}
+        </p>
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-4">
+        <LoopStat value={stats.open} label="Sự cố đang mở" tone={stats.open > 0 ? "text-amber-400" : "text-emerald-400"} />
+        <LoopStat value={verified} label="Đóng sau khi đo lại (7 ngày)" tone="text-white" />
+        <LoopStat value={stats.autoResolved7d} label="Hệ thống tự sửa (7 ngày)" tone="text-white" />
+        <LoopStat
+          value={stats.medianHoursToResolve === null ? "—" : formatDuration(stats.medianHoursToResolve * 3600_000)}
+          label="Thời gian khắc phục (trung vị)"
+          tone="text-white"
+        />
+      </div>
+      {!tick && (
+        <p className="mt-4 text-xs text-zinc-500">
+          Chưa có lịch nào gọi bộ canh gác, nên sự cố chỉ được đo lại khi có người mở trang này. Bản tự
+          host: đặt <code className="rounded bg-black/40 px-1">INTERNAL_SCHEDULER=true</code> rồi khởi
+          động lại. Trên Vercel: lịch trong <code className="rounded bg-black/40 px-1">vercel.json</code> tự chạy mỗi sáng.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function LoopStat({ value, label, tone }: { value: number | string; label: string; tone: string }) {
+  return (
+    <div>
+      <p className={`text-2xl font-extrabold ${tone}`}>{value}</p>
+      <p className="mt-1 text-xs text-zinc-500">{label}</p>
     </div>
   );
 }

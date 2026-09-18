@@ -57,6 +57,27 @@
       "when": 1789658234503,
       "tag": "0007_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789689115962,
+      "tag": "0008_notification_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789689168779,
+      "tag": "0009_last_scheduled_run",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789689402769,
+      "tag": "0010_system_state",
+      "breakpoints": true
     }
   ]
 }

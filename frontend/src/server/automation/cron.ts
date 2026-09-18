@@ -4,8 +4,14 @@ import { recordRuleRun, type RunSource } from "@/server/automation/rules";
 import { db } from "@/server/db/client";
 import { automationRules } from "@/server/db/schema";
 import type { AutomationRuleType } from "@/server/domain";
+import { runWatchdog, syncReadinessIncidents } from "@/server/automation/watchdog";
 import { getReadinessReport } from "@/server/readiness";
-import { createNotifications, pruneNotifications, type NotificationInput } from "@/server/store/notifications";
+import {
+  createNotifications,
+  pruneNotifications,
+  supersedeDatedNotifications,
+  type NotificationInput,
+} from "@/server/store/notifications";
 import { getCompanySettings } from "@/server/store/settings";
 
 // Bộ lập lịch NỘI BỘ — chạy trong chính app, không cần n8n/Docker/SMTP.
@@ -18,7 +24,7 @@ import { getCompanySettings } from "@/server/store/settings";
 // Hôm 17/09/2026 Docker không chạy, nghĩa là không cảnh báo nào tới được ai. Với cron nội
 // bộ, ít nhất người mở app vẫn thấy việc cần làm.
 
-export const CRON_JOBS = ["morning_brief", "accounting_digest", "readiness"] as const;
+export const CRON_JOBS = ["morning_brief", "accounting_digest", "readiness", "watchdog"] as const;
 export type CronJob = (typeof CRON_JOBS)[number];
 
 export type CronJobResult = {
@@ -60,6 +66,23 @@ function digestToNotifications(
     }));
 }
 
+/**
+ * Đưa bản tin lên chuông, và gỡ các mục của bản tin CŨ hơn (resolution = "superseded").
+ *
+ * Không gỡ thì chuông giữ song song "Phụ tùng sắp hết (724)" của hôm qua, hôm kia, hôm kìa —
+ * con số cũ nằm cạnh con số mới, và mục nào hôm nay đã về 0 (việc đã xong) vẫn còn treo từ
+ * hôm qua như chưa ai làm gì.
+ */
+async function publishDigest(digest: Digest, audience: NotificationInput["audience"]) {
+  const inputs = digestToNotifications(digest, audience);
+  const created = await createNotifications(inputs);
+  await supersedeDatedNotifications(
+    digest.kind,
+    inputs.map((i) => i.dedupeKey),
+  );
+  return created;
+}
+
 async function runMorningBrief(source: RunSource): Promise<CronJobResult> {
   const [company, { rule, enabled }] = await Promise.all([getCompanySettings(), loadRule("morning_brief")]);
   if (!enabled) {
@@ -71,7 +94,7 @@ async function runMorningBrief(source: RunSource): Promise<CronJobResult> {
     lowStockLimit: rule?.thresholdQty ?? 10,
     lowStockFallback: 5,
   });
-  const created = await createNotifications(digestToNotifications(digest, "manager"));
+  const created = await publishDigest(digest, "manager");
   const summary = `${digest.subject} — tạo ${created} thông báo mới`;
   await recordRuleRun("morning_brief", { status: "ok", summary, source });
   return { job: "morning_brief", status: "ok", created, summary };
@@ -86,35 +109,29 @@ async function runAccountingDigest(source: RunSource): Promise<CronJobResult> {
     companyName: company.name,
     pendingInvoiceDays: rule?.thresholdDays ?? 15,
   });
-  const created = await createNotifications(digestToNotifications(digest, "accountant"));
+  const created = await publishDigest(digest, "accountant");
   const summary = `${digest.subject} — tạo ${created} thông báo mới`;
   await recordRuleRun("accounting_digest", { status: "ok", summary, source });
   return { job: "accounting_digest", status: "ok", created, summary };
 }
 
 // Việc chặn go-live cũng lên chuông, nhưng CHỈ loại "blocker" — cảnh báo mức thường đã có
-// trang Kiểm tra vận hành, đẩy cả chúng lên chuông mỗi ngày là tiếng ồn.
+// trang Kiểm tra vận hành, đẩy cả chúng lên chuông mỗi ngày là tiếng ồn. Mỗi việc là MỘT sự
+// cố, tự đóng khi đo lại không còn — xem `syncReadinessIncidents`.
 async function runReadiness(): Promise<CronJobResult> {
   const report = await getReadinessReport();
-  const day = garageDay(report.checkedAt);
-  const inputs: NotificationInput[] = report.items
-    .filter((item) => item.severity === "blocker")
-    .map((item) => ({
-      kind: "readiness",
-      severity: "high",
-      audience: "manager",
-      title: item.title,
-      body: item.fix,
-      href: item.href ?? "/dashboard/readiness",
-      dedupeKey: `readiness:${item.id}:${day}`,
-    }));
-  const created = await createNotifications(inputs);
+  const r = await syncReadinessIncidents(report);
   return {
     job: "readiness",
     status: "ok",
-    created,
-    summary: `${report.blockers} việc chặn go-live, ${report.warnings} cảnh báo — tạo ${created} thông báo mới`,
+    created: r.opened,
+    summary: `${report.blockers} việc chặn go-live, ${report.warnings} cảnh báo — mở ${r.opened}, đóng ${r.resolved}`,
   };
+}
+
+async function runWatchdogJob(source: RunSource): Promise<CronJobResult> {
+  const r = await runWatchdog(source);
+  return { job: "watchdog", status: r.status, created: r.opened, summary: r.summary };
 }
 
 /**
@@ -128,10 +145,11 @@ export async function runCronJobs(jobs: CronJob[], source: RunSource = "cron"): 
       if (job === "morning_brief") results.push(await runMorningBrief(source));
       else if (job === "accounting_digest") results.push(await runAccountingDigest(source));
       else if (job === "readiness") results.push(await runReadiness());
+      else if (job === "watchdog") results.push(await runWatchdogJob(source));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[cron] Việc "${job}" lỗi:`, error);
-      if (job !== "readiness") {
+      if (job === "morning_brief" || job === "accounting_digest") {
         await recordRuleRun(job, { status: "error", summary: message, source });
       }
       results.push({ job, status: "error", created: 0, summary: message });

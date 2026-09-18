@@ -79,4 +79,6 @@ export const RATE_LIMITS = {
   partsBulk: { name: "parts-bulk", limit: 30, windowMs: 10 * 60 * 1000 },
   /** Chạy tay bản tin — mỗi lần là 8 truy vấn tổng hợp. */
   automationRun: { name: "automation-run", limit: 10, windowMs: 10 * 60 * 1000 },
+  /** Đồng bộ workflow — mỗi lần ~20 lời gọi API n8n. */
+  n8nSync: { name: "n8n-sync", limit: 6, windowMs: 10 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitRule>;

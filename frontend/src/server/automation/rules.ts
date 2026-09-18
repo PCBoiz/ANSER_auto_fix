@@ -110,6 +110,16 @@ export function detectRunSource(request: Request): RunSource {
 export const SCHEDULED_SOURCES: RunSource[] = ["schedule", "n8n", "cron"];
 
 /**
+ * Nguồn được tính là "n8n còn chạy theo lịch" — riêng cho bộ canh gác.
+ *
+ * Không có `cron`: bản tin sáng chạy được cả bằng n8n (gửi email) lẫn bằng lịch nội bộ (lên
+ * chuông). Nếu lịch nội bộ cũng đẩy mốc này thì n8n chết cả tuần mà bản tin sáng vẫn trông
+ * "đúng giờ" — bộ canh gác mù đúng chỗ nó cần nhìn. Lịch nội bộ có nhịp riêng
+ * (`watchdog:lastTick`, xem `/api/health`).
+ */
+export const EXTERNAL_SCHEDULE_SOURCES: RunSource[] = ["schedule", "n8n"];
+
+/**
  * Ghi dấu vết một lần chạy. KHÔNG BAO GIỜ throw: ghi nhật ký hỏng không được làm hỏng chính
  * lần gửi cảnh báo mà nó đang ghi nhận.
  *
@@ -131,6 +141,10 @@ export async function recordRuleRun(
         lastRunStatus: run.status,
         lastRunSummary: run.summary.slice(0, 500),
         lastRunSource: run.source,
+        // Chỉ n8n chạy theo lịch mới đẩy mốc này — lần bấm tay không được che lịch đã chết.
+        ...(EXTERNAL_SCHEDULE_SOURCES.includes(run.source) && run.status !== "error"
+          ? { lastScheduledRunAt: new Date() }
+          : {}),
       })
       .where(eq(automationRules.type, type));
   } catch (error) {
