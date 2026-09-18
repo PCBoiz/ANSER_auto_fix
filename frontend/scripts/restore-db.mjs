@@ -33,7 +33,9 @@ for (const t of tables) console.log(String(backup.tables[t].length).padStart(7),
 
 if (!APPLY) {
   console.log();
-  console.log("Đây mới là xem trước. Thêm --apply để ghi thật (sẽ XOÁ dữ liệu hiện có của các bảng trên).");
+  // `npm run db:restore <file> --apply` (thiếu `--`) bị npm nuốt mất --apply — nói rõ lệnh đúng.
+  console.log("CHƯA GHI GÌ — đây là bản xem trước. Để ghi thật (XOÁ dữ liệu hiện có của các bảng trên):");
+  console.log(`    npm run db:restore -- ${file} --apply      (có dấu -- ở giữa)`);
   process.exit(0);
 }
 

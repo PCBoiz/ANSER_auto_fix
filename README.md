@@ -12,6 +12,11 @@ Một project Next.js duy nhất (`frontend/`) — vừa là UI vừa là backen
 ANSER_methuy/
 ├── ARCHITECTURE.md      Kiến trúc, mô hình dữ liệu, các quyết định thiết kế
 ├── STACK_DECISIONS.md   Vì sao chọn stack này, hướng tách AI/n8n
+├── docs/
+│   ├── VIEC_CAN_LAM.md       ← BẮT ĐẦU Ở ĐÂY: việc người vận hành cần làm, theo thứ tự
+│   ├── VAN_HANH_VONG_LAP.md  Sổ tay: mỗi sự cố/email cảnh báo nghĩa là gì, làm gì
+│   ├── NHAT_KY_CAI_TIEN.md   Đã làm gì, vì sao, ở commit nào
+│   └── BAI_HOC_VA_BAY.md     Bẫy đã dính, số liệu đã đo, cách kiểm chứng lại
 └── frontend/            Next.js (TypeScript, App Router, Tailwind v4) — UI + /api/*
 ```
 
@@ -66,12 +71,15 @@ Công cụ dữ liệu (`cd frontend`):
 | Lệnh | Làm gì |
 |---|---|
 | `npm run db:backup` | Sao lưu toàn bộ bảng ra `backups/*.json` (bị gitignore), đọc lại để kiểm chứng. Tự host có sao lưu tự động 2h sáng khi đặt `BACKUP_DIR` |
-| `npm run db:restore <file> --apply` | Khôi phục — xem trước mặc định, `--apply` mới ghi |
-| `npm run data:clean-demo --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
-| `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `--apply-cost` / `--apply-rename` |
+| `npm run db:restore -- <file> --apply` | Khôi phục — xem trước mặc định, `--apply` mới ghi |
+| `npm run data:clean-demo -- --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
+| `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `-- --apply-cost` / `-- --apply-rename` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | 181 test vitest cho module thuần — không cần DB |
 | `npm run check` | Đúng chuỗi CI: typecheck → lint → test → build → quét bundle. Chạy trước khi push. |
+
+> **Dấu `--` ở giữa là bắt buộc** với các cờ `--apply…`: `npm run data:clean-demo --apply` bị npm nuốt mất
+> cờ mà không báo gì, script chỉ chạy xem trước (đã thử trên npm 11). Script in rõ "CHƯA XOÁ GÌ" khi đó.
 
 ## Trạng thái hiện tại
 

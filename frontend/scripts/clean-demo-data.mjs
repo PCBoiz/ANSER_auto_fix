@@ -121,7 +121,12 @@ if (skipped.length > 0) {
 
 if (!APPLY) {
   console.log();
-  console.log("Chạy lại với --apply để xoá thật.");
+  // Nói rõ "chưa xoá gì" + đúng câu lệnh: `npm run data:clean-demo --apply` (thiếu `--` ở
+  // giữa) bị npm nuốt mất cờ --apply mà không báo gì — đã thử trên npm 11. Người gõ sẽ tưởng
+  // đã xoá xong, trong khi script chỉ chạy xem trước.
+  console.log("CHƯA XOÁ GÌ — đây là bản xem trước. Để xoá thật:");
+  console.log("    npm run data:clean-demo -- --apply      (có dấu -- ở giữa)");
+  console.log("  hoặc node scripts/clean-demo-data.mjs --apply");
   await pool.end();
   process.exit(0);
 }

@@ -222,7 +222,7 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       group: "Dữ liệu",
       title: "Dữ liệu mẫu còn lẫn với dữ liệu thật",
       detail: `Còn ${bits.join(", ")}. Đây là dữ liệu minh hoạ do hệ thống tự tạo lúc DB còn rỗng, không phải hàng và người thật của gara.`,
-      fix: "Chạy `npm run data:clean-demo` để xem trước và xoá (script từ chối xoá thứ đã phát sinh giao dịch).",
+      fix: "Chạy `npm run data:clean-demo` để xem trước, rồi `npm run data:clean-demo -- --apply` để xoá (dấu -- bắt buộc; script từ chối xoá thứ đã phát sinh giao dịch).",
       href: "/dashboard/parts",
     });
   }

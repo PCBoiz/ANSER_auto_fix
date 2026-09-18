@@ -27,6 +27,18 @@ import { Pool } from "@neondatabase/serverless";
 const APPLY_COST = process.argv.includes("--apply-cost");
 const APPLY_RENAME = process.argv.includes("--apply-rename");
 
+// `npm run data:name-prices --apply-cost` (thiếu `--` ở giữa): npm giữ cờ lại làm cấu hình của
+// chính nó (npm_config_apply_cost) thay vì chuyển cho script. Dừng hẳn và chỉ đúng lệnh, thay vì
+// lặng lẽ chạy xem trước để người gõ tưởng đã ghi.
+if (
+  (process.env.npm_config_apply_cost && !APPLY_COST) ||
+  (process.env.npm_config_apply_rename && !APPLY_RENAME)
+) {
+  console.error("npm đã giữ lại cờ --apply-… (thiếu dấu -- ở giữa), CHƯA ghi gì. Gõ lại:");
+  console.error("    npm run data:name-prices -- --apply-cost --apply-rename");
+  process.exit(1);
+}
+
 // "G" + số, có thể có dấu chấm phân cách nghìn, có thể bắt đầu bằng dấu chấm ("G.700"),
 // nằm ở CUỐI tên sau một khoảng trắng. Neo cuối chuỗi để không cắt nhầm chữ G trong tên
 // ("Gương chiếu hậu", "Gioăng") — những chữ đó không theo sau bởi số rồi hết chuỗi.
@@ -82,7 +94,7 @@ for (const p of mismatch.slice(0, 8)) console.log(`   ${p.code.padEnd(8)} ${p.na
 
 if (!APPLY_COST && !APPLY_RENAME) {
   console.log();
-  console.log("Chưa ghi gì. Thêm --apply-cost và/hoặc --apply-rename để ghi thật.");
+  console.log("Chưa ghi gì. Để ghi thật: npm run data:name-prices -- --apply-cost [--apply-rename]  (có dấu -- ở giữa)");
   await pool.end();
   process.exit(0);
 }

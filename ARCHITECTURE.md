@@ -29,7 +29,7 @@ frontend/
 ├── docker-compose.yml            n8n (:5681) + MailHog (:8027)
 ├── drizzle.config.ts
 ├── next.config.ts / postcss.config.mjs / eslint.config.mjs / tsconfig.json
-├── n8n-workflows/                9 workflow JSON + README hướng dẫn import
+├── n8n-workflows/                10 workflow JSON (app tự đồng bộ lên n8n — §12) + README
 └── src/
     ├── instrumentation.ts        chạy 1 lần lúc server khởi động → seed idempotent
     ├── proxy.ts                  chặn /dashboard (KHÔNG phải middleware.ts — xem mục 3)
@@ -64,9 +64,9 @@ frontend/
         ├── n8n.ts                webhook fire-and-forget (không throw)
         ├── n8nApi.ts             n8n Public API (có throw)
         ├── db/
-        │   ├── schema.ts         20 bảng + 2 sequence mã chứng từ + 41 index
+        │   ├── schema.ts         22 bảng + 2 sequence mã chứng từ + 41 index
         │   ├── client.ts         singleton `db` khởi tạo lười
-        │   └── migrations/0000_*.sql … 0003_*.sql
+        │   └── migrations/0000_*.sql … 0010_*.sql
         └── store/
             ├── codes.ts          sinh mã chứng từ từ sequence
             ├── users, employees, branches, settings, seed
@@ -442,7 +442,7 @@ chuông) đều đã làm trong đợt 17/09/2026 — xem mục 11. Còn lại:
 
 | Việc | Ghi chú |
 |---|---|
-| Dọn dữ liệu thật trước go-live | Là việc của người vận hành, không phải code: chạy `npm run data:clean-demo --apply`, đổi email + mật khẩu 3 tài khoản `@anser.auto`, điền thông tin doanh nghiệp, đặt tên có dấu cho "Xuong son go han", đặt ngưỡng tồn 0 cho vật tư đặt theo xe. Trang **Kiểm tra vận hành** liệt kê đúng những việc này và tự hết khi xong. |
+| Dọn dữ liệu thật trước go-live | Là việc của người vận hành, không phải code: chạy `npm run data:clean-demo -- --apply` (dấu `--` bắt buộc — thiếu nó npm nuốt mất cờ), đổi email + mật khẩu 3 tài khoản `@anser.auto`, điền thông tin doanh nghiệp, đặt tên có dấu cho "Xuong son go han", đặt ngưỡng tồn 0 cho vật tư đặt theo xe. Trang **Kiểm tra vận hành** liệt kê đúng những việc này và tự hết khi xong. |
 | 781 phụ tùng chưa có giá bán | Công cụ đã có (Nhập giá hàng loạt), số liệu thì chưa. Đuôi "G3.000" trong tên là **giá nhập**, không phải giá bán (đã đo: trung vị G/giá vốn = 1,00) — đừng điền từ đó. `npm run data:name-prices` đề xuất điền giá vốn cho 105 mã còn trống và gỡ đuôi giá khỏi 600 tên trước khi in hoá đơn. |
 | Bảo hiểm chi trả một phần | Hoá đơn có `insuranceAmount` nhưng sổ bán hàng (nguồn thật: phần lớn khách là công ty bảo hiểm) không nối được với lệnh sửa chữa — dữ liệu gốc không có biển số. Khi gara bắt đầu lập lệnh trong app, cân nhắc thêm `salesLedger.invoiceId` để đối chiếu. |
 | Cột "tiền thuế được giảm" trong sổ | 213/232 chứng từ bán có tổng thấp hơn tiền hàng 0,6%/0,2% theo phương pháp trực tiếp. Hiện chỉ giải thích trong form; nếu cần khai thuế từ app thì phải có cột riêng thay vì suy ngược. |
@@ -559,8 +559,9 @@ hai hàm thuần có test (`decideSync`, `decideActivation`):
   workflow canh gác (chỉ gửi cho chính gara, chỉ khi app chết).
 - Máy **không được** tự: đè workflow đã bị chỉnh tay trong n8n (có thể là công sức của ai đó),
   và **bật** workflow nghiệp vụ. DB thật lúc viết có cả 9 quy tắc ở trạng thái "bật" — nhiều khả
-  năng là giá trị mặc định lúc tạo, không phải quyết định của ai — trong đó 3 workflow gửi email
-  thẳng cho **khách**. Những việc này lên chuông kèm nút "Đồng bộ workflow" (có hộp xác nhận nói
+  năng là giá trị mặc định lúc tạo, không phải quyết định của ai — trong đó **4** workflow gửi
+  email thẳng cho **khách** (nhắc bảo dưỡng, nhắc lịch hẹn, báo tiến độ sửa chữa, nhắc chờ
+  nghiệm thu). Những việc này lên chuông kèm nút "Đồng bộ workflow" (có hộp xác nhận nói
   rõ sẽ bật cả workflow gửi khách).
 - Quy tắc chưa có dòng cấu hình: không đụng tới trạng thái bật/tắt (endpoint coi là bật; tự tắt
   là làm im một workflow đang chạy mà không ai bấm gì).
