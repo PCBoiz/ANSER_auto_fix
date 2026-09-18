@@ -1,7 +1,7 @@
 # Workflow n8n — ANSER Auto
 
-9 workflow, import thủ công qua n8n UI (n8n không có API import dùng được ở đây — đúng cách
-ANSER Flask và ANSER v2 cũng làm).
+10 workflow (9 nghiệp vụ + canh gác app). **Từ 18/09/2026 app tự đẩy chúng lên n8n** qua n8n
+Public API — xem §0.1. Import tay vẫn làm được nhưng không còn cần.
 
 | File | Trigger | Gọi vào Next.js | Gửi cho ai |
 |---|---|---|---|
@@ -14,6 +14,36 @@ ANSER Flask và ANSER v2 cũng làm).
 | `awaiting_acceptance_reminder.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/awaiting-acceptance` | **Khách hàng** (1 thư/lệnh) + bản tổng hợp cho gara |
 | `unpaid_invoice_report.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/unpaid-invoices` | Chỉ **email doanh nghiệp** — không gửi khách |
 | `revenue_report.json` | Lịch, 20h mỗi ngày | `GET /api/n8n/internal/revenue?period=day` | Email doanh nghiệp |
+| `app_watchdog.json` **(hạ tầng)** | Lịch, mỗi 30 phút | `GET /api/health` | Email doanh nghiệp — **chỉ** khi app không phản hồi / vòng tự động hỏng, và khi đã hoạt động lại |
+
+## 0.1 Thay đổi ngày 18/09/2026 — không còn import tay
+
+**Đồng bộ.** Trang Tự động hoá → **Đồng bộ workflow**, hoặc tự động mỗi lượt canh gác (30 phút ở
+bản tự host). App đọc các file trong thư mục này (đóng gói sẵn vào bản build), rồi với mỗi file:
+điền `N8N_INTERNAL_TOKEN`, thay `http://host.docker.internal:3000` bằng `APP_URL_FOR_N8N`, gán
+credential SMTP đầu tiên tìm thấy trong n8n cho mọi node Gửi Email, điền email nhận cảnh báo
+(email doanh nghiệp, hoặc `N8N_NOTIFY_EMAIL`) cho workflow canh gác. Cần `N8N_API_URL` +
+`N8N_API_KEY` (API key có scope `workflow:*` và `credential:list`).
+
+| Tình huống | Bộ canh gác (tự động) | Nút "Đồng bộ workflow" (người bấm) |
+|---|---|---|
+| n8n chưa có workflow | Tạo (n8n luôn tạo ở trạng thái tắt) | Tạo |
+| Có, khớp mẫu, node Email chưa có SMTP | Gán SMTP | Gán SMTP |
+| Có, **khác mẫu** (ai đó sửa tay trong n8n) | **Không đè** — báo lên chuông | Đè về bản mẫu |
+| Quy tắc bật trong app, workflow đang tắt | **Không bật** — báo lên chuông (có workflow gửi thẳng cho khách) | Bật |
+| Quy tắc tắt trong app, workflow đang bật | Tắt | Tắt |
+| Workflow canh gác app | Bật (khi đã có email nhận và SMTP) | Bật |
+
+"Khác mẫu" so bằng vân tay nội dung (tên, loại, tham số từng node + nối dây), bỏ qua id, vị trí
+và credential — mở rồi lưu lại trong n8n UI có thể thêm tham số mặc định và bị tính là lệch;
+khi đó chỉ cần bấm Đồng bộ.
+
+**Canh gác hai chiều.** App canh n8n: quy tắc nào từng chạy theo lịch mà nay im quá nhịp của nó
+(8 giờ cho lịch 6 giờ, 26 giờ cho lịch ngày, 8 ngày cho lịch tuần) lên chuông, và tự đóng khi
+lịch chạy lại. n8n canh app: `app_watchdog.json` hỏi `/api/health` mỗi 30 phút; hỏng thì email
+ngay, nhắc lại mỗi 3 giờ (không phải mỗi 30 phút), và email "đã hoạt động lại" kèm thời gian gián
+đoạn khi khoẻ lại. Trạng thái chống trùng nằm trong static data của workflow (chỉ lưu khi chạy
+theo lịch, không lưu khi bấm Execute thử).
 
 ## 0. Thay đổi ngày 17/09/2026 — đọc trước khi import lại
 
@@ -110,14 +140,16 @@ Settings → n8n API → Create an API key, dán vào `N8N_API_KEY` trong `.env.
 
 ## 3. Import
 
-n8n UI → Workflows → **Import from File** → chọn từng file `.json` trong thư mục này.
-Sau khi import: gán credential SMTP cho node Gửi Email, thay token, rồi bật **Active**.
+Không cần nữa — xem §0.1. Nếu vẫn import tay (n8n UI → Workflows → **Import from File**): gán
+credential SMTP cho node Gửi Email, thay token, thay `REPLACE_WITH_ALERT_EMAIL` trong
+`app_watchdog.json`, rồi bật **Active**. Giữ nguyên **tên** workflow: app nhận diện theo tên.
 
 ## 4. Địa chỉ Next.js trong workflow
 
-Các node HTTP Request trỏ tới `http://host.docker.internal:3000` — địa chỉ để container n8n
-gọi ngược ra Next.js đang chạy trên máy host. Khi deploy chung một Docker Compose với Next.js,
-đổi thành tên service (vd `http://web:3000`).
+Các node HTTP Request trong file mẫu trỏ tới `http://host.docker.internal:3000` — địa chỉ để
+container n8n gọi ngược ra Next.js đang chạy trên máy host. Khi đồng bộ, app thay bằng
+`APP_URL_FOR_N8N`; dịch vụ `app` trong `docker-compose.yml` đặt sẵn `http://app:3000`. Trên Linux,
+dịch vụ n8n có `extra_hosts: host.docker.internal:host-gateway` để địa chỉ mặc định vẫn dùng được.
 
 ## 5. Báo cáo doanh thu tuần/tháng
 

@@ -41,9 +41,25 @@ cd frontend
 docker compose up -d                 # n8n tại :5681, MailHog tại :8027
 ```
 
+Không cần import workflow bằng tay: trang **Tự động hoá → Đồng bộ workflow** đẩy cả 10 mẫu
+lên n8n (tự điền token, địa chỉ app, credential SMTP). Bộ canh gác chạy mỗi 30 phút còn tự tạo
+workflow thiếu và báo lên chuông khi lịch nào ngừng chạy — xem `ARCHITECTURE.md` §12.
+
 Không có n8n thì bản tin sáng, tổng hợp kế toán và các việc chặn go-live vẫn lên **chuông thông
 báo** trong app qua `GET /api/cron/automation` (lịch ở `frontend/vercel.json`, bảo vệ bằng
 `CRON_SECRET`). n8n chỉ cần cho phần gửi email ra ngoài.
+
+**Tự host cả app trong Docker** (app tự khởi động lại khi chết, có lịch nội bộ, n8n gọi app qua
+mạng compose):
+
+```bash
+cd frontend
+cp .env.local .env.app               # dùng biến production thật; .gitignore đã chặn .env*
+npm run db:migrate                   # migration chạy từ máy có mã nguồn, không trong image
+docker compose --profile app up -d --build
+```
+
+Không bật profile `app` thì `docker compose up -d` vẫn như cũ (chỉ n8n + MailHog).
 
 Công cụ dữ liệu (`cd frontend`):
 
@@ -54,7 +70,7 @@ Công cụ dữ liệu (`cd frontend`):
 | `npm run data:clean-demo --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
 | `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `--apply-cost` / `--apply-rename` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | 90 test vitest cho module thuần — không cần DB |
+| `npm test` | 168 test vitest cho module thuần — không cần DB |
 | `npm run check` | Đúng chuỗi CI: typecheck → lint → test → build → quét bundle. Chạy trước khi push. |
 
 ## Trạng thái hiện tại
@@ -76,12 +92,12 @@ Các mục trong sidebar:
 | Kho phụ tùng | CRUD, phiếu nhập/xuất có transaction, cảnh báo tồn thấp theo ngưỡng riêng |
 | Hoá đơn | Xuất từ lệnh đã hoàn tất, VAT, ghi nhận thanh toán, theo dõi công nợ |
 | Báo cáo | Doanh thu ngày/tuần/tháng, cơ cấu công vs phụ tùng, top hạng mục và phụ tùng |
-| Tự động hoá | Bật/tắt và ngưỡng là công tắc thật (workflow đọc lại từ app trước khi gửi); hiện lần chạy gần nhất + nguồn (lịch / chạy tay) để biết lịch có tự nổ không; xem/tải mẫu workflow JSON |
+| Tự động hoá | Bật/tắt và ngưỡng là công tắc thật (workflow đọc lại từ app trước khi gửi); hiện lần chạy gần nhất + nguồn (lịch / chạy tay) để biết lịch có tự nổ không; **Đồng bộ workflow** lên n8n bằng một nút; xem/tải mẫu workflow JSON |
 | Chi nhánh | CRUD xưởng, chuyên môn (máy / đồng-sơn…), email nhận cảnh báo; cảnh báo tên thiếu dấu |
 | Nhân sự | CRUD hồ sơ nhân viên, chức vụ, chuyên môn, đơn giá công |
 | Tài khoản | Cấp tài khoản (mật khẩu tạm bắt buộc đổi), đặt lại mật khẩu, đổi email, xoá; chặn xoá admin cuối cùng |
 | Cài đặt | Thông tin doanh nghiệp, VAT mặc định, chu kỳ bảo dưỡng |
-| Kiểm tra vận hành | Việc chặn go-live và cảnh báo, đo trực tiếp từ DB, kèm cách xử lý và link tới trang xử lý |
+| Kiểm tra vận hành | Việc chặn go-live và cảnh báo, đo trực tiếp từ DB, kèm cách xử lý và link tới trang xử lý; số liệu vòng tự khép (sự cố đang mở, đã đóng sau khi đo lại, hệ thống tự sửa, thời gian khắc phục) |
 
 Kho phụ tùng có thêm **Nhập giá hàng loạt** (gõ thẳng trên bảng, 100 dòng/trang) và **Nhập từ
 Excel** (khớp cột theo tên tiêu đề, xem trước rồi mới ghi, tồn đầu kỳ đi qua phiếu nhập).

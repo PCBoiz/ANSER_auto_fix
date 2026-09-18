@@ -446,7 +446,7 @@ chuông) đều đã làm trong đợt 17/09/2026 — xem mục 11. Còn lại:
 | 781 phụ tùng chưa có giá bán | Công cụ đã có (Nhập giá hàng loạt), số liệu thì chưa. Đuôi "G3.000" trong tên là **giá nhập**, không phải giá bán (đã đo: trung vị G/giá vốn = 1,00) — đừng điền từ đó. `npm run data:name-prices` đề xuất điền giá vốn cho 105 mã còn trống và gỡ đuôi giá khỏi 600 tên trước khi in hoá đơn. |
 | Bảo hiểm chi trả một phần | Hoá đơn có `insuranceAmount` nhưng sổ bán hàng (nguồn thật: phần lớn khách là công ty bảo hiểm) không nối được với lệnh sửa chữa — dữ liệu gốc không có biển số. Khi gara bắt đầu lập lệnh trong app, cân nhắc thêm `salesLedger.invoiceId` để đối chiếu. |
 | Cột "tiền thuế được giảm" trong sổ | 213/232 chứng từ bán có tổng thấp hơn tiền hàng 0,6%/0,2% theo phương pháp trực tiếp. Hiện chỉ giải thích trong form; nếu cần khai thuế từ app thì phải có cột riêng thay vì suy ngược. |
-| Xác nhận n8n tự chạy theo lịch thật | Cơ chế đã có (nhịp tim + nguồn chạy), nhưng tới lúc viết, Docker trên máy dev đang tắt nên chưa có lần nào ghi nhận nguồn `schedule`. Cần bật n8n, import lại 9 workflow, đợi qua một mốc giờ. |
+| Xác nhận n8n tự chạy theo lịch thật | Cơ chế đã đủ (nhịp tim, nguồn chạy, đồng bộ tự động, canh gác — §12) và đã chạy thử trên một n8n 2.39 dựng tạm. Chưa có lần chạy theo lịch nào trên n8n **của gara**: Docker trên máy dev hỏng từ 17/09. Khi bật lại: Tự động hoá → **Đồng bộ workflow**, đợi qua một mốc giờ, trang Kiểm tra vận hành tự hết mục "chưa từng chạy". |
 | Test cho phần chạm DB | Đã có 84 test cho module thuần (xem §11.4). Phần đọc/ghi DB (`belowThresholdSql`, `loginThrottle`, `bulkUpdateParts`) vẫn chỉ kiểm tra bằng mô phỏng tay trên DB thật. Khi cần: Neon branch riêng cho CI + biến `DATABASE_URL` trong GitHub Secrets. |
 
 ## 11. Đợt rà soát 17/09/2026 — những gì đã đổi và vì sao
@@ -517,3 +517,80 @@ hình dạng UI gửi; script Node chạy thẳng hàm; mô phỏng SQL trên DB
 tồn, bộ lọc ngày 12 tháng); và Chrome DevTools MCP mở trang thật để bấm, chụp, đọc console và
 chạy Lighthouse (bắt được 4 lỗi giao diện mà curl không thấy). Đo hiệu năng trước/sau trên
 cùng DB: Tổng quan ~8s → ~0,34s.
+
+## 12. Vòng lặp vận hành khép kín (18/09/2026)
+
+Trước đợt này hệ thống **phát hiện** được nhiều thứ (trang Kiểm tra vận hành, nhịp tim của
+workflow, chuông) nhưng vòng lặp đứt ở bốn chỗ — phát hiện xong không có gì dẫn tới "đã xử lý
+và đã kiểm chứng":
+
+| Chỗ đứt | Trước | Nay | Ở đâu |
+|---|---|---|---|
+| ① Thông báo không bao giờ "đóng" | Khoá `readiness:<id>:<ngày>`: sửa xong vẫn còn thông báo hôm nay; chưa sửa thì mỗi sáng thêm một bản | Mỗi sự cố **một** bản ghi, khoá không kèm ngày. Lần đo sau không còn thấy → đóng (`resolution = verified`); tái phát → mở lại. Việc máy tự sửa ghi `auto`. Bản tin cũ bị bản mới thay → `superseded` (ẩn) | `store/notifications.ts` (`syncIncidents`), `lib/opsLoop.ts` (`planIncidents`), migration 0008 |
+| ② Workflow import bằng tay | Sửa mẫu trong git → nhớ vào n8n → import → dán token vào từng node → gán SMTP từng node → bật Active | App tự đẩy mẫu lên n8n qua Public API, điền token/địa chỉ app/SMTP/email cảnh báo, phát hiện lệch bằng vân tay nội dung | `lib/n8nTemplates.ts`, `automation/n8nSync.ts` |
+| ③ App chết thì không ai biết; n8n chết chỉ biết sau "48 giờ" chung chung | Chuông nằm trong app — app chết thì chuông chết | Canh gác **hai chiều**: app canh n8n (nhịp kỳ vọng riêng từng quy tắc: 8 giờ cho lịch 6 giờ, 26 giờ cho lịch ngày, 8 ngày cho lịch tuần); n8n canh app (workflow "Canh gác app" hỏi `/api/health` mỗi 30 phút, email khi hỏng, nhắc mỗi 3 giờ, **email khi đã hoạt động lại**) | `automation/watchdog.ts`, `api/health`, `n8n-workflows/app_watchdog.json` |
+| ④ Tự host không có lịch | Chỉ Vercel Cron gọi được `/api/cron/automation` | Lịch trong tiến trình (`INTERNAL_SCHEDULER=true`), giành khe trong DB nên hai tiến trình không chạy trùng, có bắt kịp khi máy tắt buổi sáng | `automation/scheduler.ts`, `store/systemState.ts`, migration 0010 |
+
+```
+            ┌──────────── lịch nội bộ / Vercel Cron (mỗi 30 phút | mỗi sáng) ────────────┐
+            ▼                                                                             │
+  PHÁT HIỆN  quy tắc im quá nhịp · n8n không trả lời · workflow thiếu/lệch/tắt ·          │
+             thiếu SMTP · việc chặn go-live                                               │
+            │                                                                             │
+            ├─ an toàn ──► TỰ SỬA: tạo workflow thiếu, gán SMTP còn trống, tắt theo app,  │
+            │              bật workflow canh gác  → ghi "Hệ thống đã tự khắc phục"        │
+            │                                                                             │
+            └─ cần phán đoán ─► CHUÔNG (1 bản ghi/sự cố) ─► NGƯỜI: bấm "Đồng bộ workflow",│
+                                                            sửa dữ liệu, bật Docker…      │
+                                                                     │                    │
+  KIỂM CHỨNG  lượt sau đo lại (hoặc ngay khi mở trang Kiểm tra vận hành / bấm Đồng bộ)    │
+            └─ không còn thấy → ĐÓNG "đã khắc phục sau X" ────────────────────────────────┘
+
+  Ngoài vòng: n8n hỏi /api/health mỗi 30 phút — app chết, hoặc chính vòng trên ngừng chạy
+  (nhịp canh gác im > 26 giờ, hay sự cố canh gác mức cao đang mở) → email; hồi phục → email.
+```
+
+**Ranh giới "máy tự làm / người quyết"** — quyết định quan trọng nhất của đợt này, nằm trong
+hai hàm thuần có test (`decideSync`, `decideActivation`):
+
+- Máy **được** tự: tạo workflow còn thiếu (n8n luôn tạo ở trạng thái tắt), gán SMTP cho node
+  Email đang trống (nội dung khớp mẫu, chỉ thêm credential), **tắt** workflow mà app đã tắt, bật
+  workflow canh gác (chỉ gửi cho chính gara, chỉ khi app chết).
+- Máy **không được** tự: đè workflow đã bị chỉnh tay trong n8n (có thể là công sức của ai đó),
+  và **bật** workflow nghiệp vụ. DB thật lúc viết có cả 9 quy tắc ở trạng thái "bật" — nhiều khả
+  năng là giá trị mặc định lúc tạo, không phải quyết định của ai — trong đó 3 workflow gửi email
+  thẳng cho **khách**. Những việc này lên chuông kèm nút "Đồng bộ workflow" (có hộp xác nhận nói
+  rõ sẽ bật cả workflow gửi khách).
+- Quy tắc chưa có dòng cấu hình: không đụng tới trạng thái bật/tắt (endpoint coi là bật; tự tắt
+  là làm im một workflow đang chạy mà không ai bấm gì).
+
+**`/api/health`** trước đây luôn trả `{ status: "ok" }`. Nay: `ok` / `degraded` (vòng tự động
+hỏng) / `down` (DB không trả lời), 503 cho hai trạng thái sau. Ai cũng gọi được nhưng chỉ nhận
+trạng thái; chi tiết chỉ trả kèm `X-Internal-Token`. `?live=1` không chạm DB — cho healthcheck
+của Docker, để Neon ngủ đông không làm Docker coi app là hỏng. Việc chặn go-live **không** làm
+app `degraded`: đó là việc cài đặt, không phải hồi quy.
+
+**`last_scheduled_run_at` chỉ tính n8n.** Bản tin sáng chạy được bằng cả n8n (email) lẫn lịch nội
+bộ (chuông). Nếu lịch nội bộ cũng đẩy mốc này thì n8n chết cả tuần mà bản tin vẫn trông "đúng
+giờ". Lịch nội bộ có nhịp riêng (`system_state.watchdog:lastTick`), do `/api/health` canh.
+
+### 12.1 Cách đã kiểm tra
+
+- **168 test** (thêm 78): đối soát sự cố, nhịp kỳ vọng từng quy tắc, khe lịch theo giờ Việt Nam
+  (kể cả bắt kịp và ranh giới nửa đêm UTC/VN), ranh giới tự sửa/người quyết, gộp "đã tự sửa",
+  render cả 10 file mẫu (không sót placeholder, mọi node Email có SMTP). Riêng node Code của
+  workflow "Canh gác app" được **chạy thật** trong test với đồng hồ giả: báo lần đầu, im 2 giờ 30,
+  nhắc sau 3 giờ, báo hồi phục — bắt được lỗi "gián đoạn 90 phút" hiện thành "2 giờ".
+- **DB thật**: `claimSlot` gọi đồng thời 3 lần → đúng 1 bên thắng; sự cố giả được lượt canh gác
+  đóng với `verified`; lượt thứ hai không mở trùng; 5 thông báo readiness kiểu cũ được thay bằng 5
+  sự cố không-ngày. Bản ghi thử đã xoá.
+- **n8n 2.39 dựng tạm** (npm, không Docker) — 6 bước: n8n trống → tạo đủ 10; chạy lại → cả 10
+  "khớp mẫu" (vân tay ổn định qua vòng tạo–đọc của n8n); sửa tay giờ chạy → chỉ workflow đó "lệch",
+  không bị đè; người bấm Đồng bộ → về mẫu + bật 10/10; canh gác sau đó → không còn sự cố. Lần chạy
+  này lộ ra 3 lỗi đã sửa: workflow tạo lúc chưa có SMTP **không bao giờ** được gán SMTP (vân tay bỏ
+  qua credential); n8n từ chối bật workflow có node Email thiếu credential; timeout 5 giây quá ngắn
+  cho lệnh tạo khi n8n vừa khởi động. `n8n_workflow_id` trong DB thật được chụp lại và trả nguyên.
+- **Bản standalone** (thứ Dockerfile đóng gói): `node server.js` trả `/api/health?live=1` 200,
+  `/api/health` 503 `degraded` kèm lý do đúng ("Không liên lạc được với n8n"), trang đăng nhập 200.
+  **Chưa dựng được image Docker** trên máy này (Docker Desktop hỏng) — Dockerfile chưa được build thật.
+
