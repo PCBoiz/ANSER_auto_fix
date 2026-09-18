@@ -577,7 +577,7 @@ giờ". Lịch nội bộ có nhịp riêng (`system_state.watchdog:lastTick`), 
 
 ### 12.1 Cách đã kiểm tra
 
-- **170 test** (thêm 80): đối soát sự cố, nhịp kỳ vọng từng quy tắc, khe lịch theo giờ Việt Nam
+- **181 test** (thêm 91): đối soát sự cố, nhịp kỳ vọng từng quy tắc, khe lịch theo giờ Việt Nam
   (kể cả bắt kịp và ranh giới nửa đêm UTC/VN), ranh giới tự sửa/người quyết, gộp "đã tự sửa",
   render cả 10 file mẫu (không sót placeholder, mọi node Email có SMTP). Riêng node Code của
   workflow "Canh gác app" được **chạy thật** trong test với đồng hồ giả: báo lần đầu, im 2 giờ 30,
@@ -594,4 +594,20 @@ giờ". Lịch nội bộ có nhịp riêng (`system_state.watchdog:lastTick`), 
 - **Bản standalone** (thứ Dockerfile đóng gói): `node server.js` trả `/api/health?live=1` 200,
   `/api/health` 503 `degraded` kèm lý do đúng ("Không liên lạc được với n8n"), trang đăng nhập 200.
   **Chưa dựng được image Docker** trên máy này (Docker Desktop hỏng) — Dockerfile chưa được build thật.
+
+### 12.2 Sao lưu cũng nằm trong vòng lặp
+
+Trước: `npm run db:backup` chạy tay, không lịch, bản sao chưa từng đọc lại, và danh sách bảng
+viết cứng trong script đã **lệch** schema (19/22 bảng — may là 3 bảng thiếu đều bỏ được).
+
+| Bước vòng lặp | Làm gì | Ở đâu |
+|---|---|---|
+| Chạy | Mỗi ngày 2h sáng (lịch nội bộ, có bắt kịp) khi có `BACKUP_DIR`; bảng nào đọc lỗi thì **dừng**, không "bỏ qua rồi báo thành công" | `server/backup.ts`, `opsLoop.dueScheduledJobs` |
+| Kiểm chứng | Đọc lại file vừa ghi, đối chiếu số dòng từng bảng; chỉ xoá bản cũ (giữ `BACKUP_KEEP`, mặc định 14) **sau khi** bản mới khớp; không bao giờ xoá file người dùng tự đặt tên | `lib/backupPolicy.ts` |
+| Canh | Lần gần nhất lỗi → sự cố mức cao kèm lỗi; bản thành công gần nhất quá 36 giờ → "sao lưu đã ngừng"; tự đóng khi lần sau thành công. Trang Kiểm tra vận hành nhắc khi quá 7 ngày không có bản nào (kể cả bản chạy tay — script cũng ghi mốc) | `watchdog.ts`, `readiness.ts` |
+| Chống lệch | Danh sách bảng ở MỘT file JSON dùng chung cho script và app. Test đỏ nếu schema có bảng chưa được xếp vào "sao lưu" hoặc "cố ý loại (kèm lý do)", hoặc thứ tự vi phạm khoá ngoại thật | `server/backupTables.json`, `__tests__/backup.test.ts` |
+
+Không chạy trên Vercel (hệ thống file tạm). Docker: volume `anser_auto_backups` — vẫn nằm trên
+**cùng máy**, nên phải chép ra ngoài định kỳ. Đã thử trên DB thật: 1.186 dòng / 19 bảng,
+đọc lại khớp, xoay vòng xoá đúng 1 bản, `restore-db.mjs` (xem trước) đọc được file mới.
 

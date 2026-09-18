@@ -16,6 +16,7 @@ import { WORKFLOW_NAMES } from "@/server/store/automation";
 import { belowThresholdSql } from "@/server/store/parts";
 import { SEED_PARTS, SEED_SERVICES } from "@/server/store/seed";
 import { looksUnaccented } from "@/lib/vietnamese";
+import { getSystemState } from "@/server/store/systemState";
 
 // "Kiểm tra sẵn sàng vận hành" — trả lời một câu hỏi duy nhất: hệ thống này đã dùng được
 // cho gara thật chưa, hay còn dữ liệu mẫu và cấu hình bỏ trống?
@@ -249,6 +250,24 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
         "Báo cáo lãi gộp bỏ qua các mặt hàng này (giá vốn null = chưa biết, cố ý khác 0), nên con số lãi sẽ thiếu phần của chúng.",
       fix: "Điền dần khi nhập kho — mỗi phiếu nhập có ghi đơn giá sẽ tự cập nhật giá vốn.",
       href: "/dashboard/parts",
+    });
+  }
+
+  // Sao lưu: đọc mốc do cả lịch tự động lẫn `npm run db:backup` ghi lại. Không cần biết bản
+  // sao nằm ở đâu — chỉ cần biết lần cuối có một bản ĐỌC LẠI ĐƯỢC là bao giờ.
+  const lastBackup = await getSystemState<{ at: string }>("backup:lastOk").catch(() => null);
+  const backupAgeDays = lastBackup
+    ? Math.floor((Date.now() - new Date(lastBackup.value.at).getTime()) / 86_400_000)
+    : null;
+  if (backupAgeDays === null || backupAgeDays > 7) {
+    items.push({
+      id: "no-recent-backup",
+      severity: "warning",
+      group: "Dữ liệu",
+      title: backupAgeDays === null ? "Chưa có bản sao lưu nào" : `Bản sao lưu gần nhất đã ${backupAgeDays} ngày`,
+      detail:
+        "Neon có khôi phục theo thời điểm, nhưng nó nằm trong tài khoản Neon — mất tài khoản là mất luôn đường khôi phục. Cần một bản sao độc lập.",
+      fix: "Tự host: đặt BACKUP_DIR (docker-compose.yml đã đặt sẵn) để sao lưu mỗi ngày lúc 2h. Máy khác: chạy `npm run db:backup` rồi chép file ra ổ ngoài.",
     });
   }
 

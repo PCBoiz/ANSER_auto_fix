@@ -5,6 +5,7 @@ import { db } from "@/server/db/client";
 import { automationRules } from "@/server/db/schema";
 import type { AutomationRuleType } from "@/server/domain";
 import { runWatchdog, syncReadinessIncidents } from "@/server/automation/watchdog";
+import { runBackup } from "@/server/backup";
 import { getReadinessReport } from "@/server/readiness";
 import {
   createNotifications,
@@ -24,7 +25,7 @@ import { getCompanySettings } from "@/server/store/settings";
 // Hôm 17/09/2026 Docker không chạy, nghĩa là không cảnh báo nào tới được ai. Với cron nội
 // bộ, ít nhất người mở app vẫn thấy việc cần làm.
 
-export const CRON_JOBS = ["morning_brief", "accounting_digest", "readiness", "watchdog"] as const;
+export const CRON_JOBS = ["morning_brief", "accounting_digest", "readiness", "watchdog", "backup"] as const;
 export type CronJob = (typeof CRON_JOBS)[number];
 
 export type CronJobResult = {
@@ -146,6 +147,10 @@ export async function runCronJobs(jobs: CronJob[], source: RunSource = "cron"): 
       else if (job === "accounting_digest") results.push(await runAccountingDigest(source));
       else if (job === "readiness") results.push(await runReadiness());
       else if (job === "watchdog") results.push(await runWatchdogJob(source));
+      else if (job === "backup") {
+        const r = await runBackup(source === "manual" ? "manual" : "schedule");
+        results.push({ job: "backup", status: r.status, created: 0, summary: r.summary });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[cron] Việc "${job}" lỗi:`, error);

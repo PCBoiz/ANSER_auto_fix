@@ -15,35 +15,17 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { mkdirSync, writeFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Pool } from "@neondatabase/serverless";
 
-// Thứ tự QUAN TRỌNG: đây cũng là thứ tự khôi phục, và bảng con phải đứng sau bảng cha,
-// nếu không khoá ngoại sẽ chặn lúc chèn lại.
-const TABLES_IN_DEPENDENCY_ORDER = [
-  "branches",
-  "employees",
-  "users",
-  "customers",
-  "vehicles",
-  "services",
-  "parts",
-  "appointments",
-  "service_orders",
-  "service_order_labors",
-  "service_order_parts",
-  "service_order_special_orders",
-  "part_transactions",
-  "invoices",
-  "company_settings",
-  "automation_rules",
-  "sales_ledger",
-  "purchase_ledger",
-  "attendance_logs",
-  // `login_attempts` cố tình KHÔNG sao lưu: đó là dữ liệu chống dò mật khẩu, sống 30 ngày
-  // và không có giá trị gì khi khôi phục.
-];
+// Danh sách bảng + thứ tự (= thứ tự khôi phục, bảng cha trước) nằm ở MỘT chỗ, dùng chung với
+// sao lưu tự động trong app. Trước đây nó viết cứng ở đây và đã lệch: schema có 22 bảng, danh
+// sách có 19 — may là 3 bảng thiếu đều bỏ được. Nay test đỏ nếu có bảng chưa được xếp chỗ.
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const plan = JSON.parse(readFileSync(join(root, "src", "server", "backupTables.json"), "utf-8"));
+const TABLES_IN_DEPENDENCY_ORDER = plan.order;
 
 const outIndex = process.argv.indexOf("--out");
 const outDir = outIndex !== -1 ? process.argv[outIndex + 1] : "backups";
@@ -100,8 +82,43 @@ const file = join(outDir, `anser-auto-${stamp}.json`);
 writeFileSync(file, JSON.stringify(backup, null, 2), "utf-8");
 
 const sizeMb = (statSync(file).size / 1024 / 1024).toFixed(2);
+
+// Đọc lại và đối chiếu số dòng — một bản sao chưa từng đọc lại chỉ là một file ta hy vọng.
+const reread = JSON.parse(readFileSync(file, "utf-8"));
+const mismatched = Object.keys(backup.tables).filter(
+  (t) => reread.tables?.[t]?.length !== backup.tables[t].length,
+);
+if (mismatched.length > 0) {
+  console.error(`Đọc lại KHÔNG khớp ở: ${mismatched.join(", ")} — đừng dựa vào file này.`);
+  await pool.end();
+  process.exit(1);
+}
+
+// Ghi mốc để trang Kiểm tra vận hành biết lần cuối có bản sao đọc lại được là bao giờ. Bảng
+// system_state chưa có (DB cũ chưa migrate) thì bỏ qua — bản sao vẫn là bản sao.
+try {
+  const state = JSON.stringify({
+    at: backup.meta.createdAt,
+    ok: true,
+    source: "manual",
+    file: file.split(/[\\/]/).pop(),
+    rows: totalRows,
+    tables: Object.keys(backup.tables).length,
+    bytes: statSync(file).size,
+  });
+  for (const key of ["backup:last", "backup:lastOk"]) {
+    await pool.query(
+      `insert into system_state (key, value, updated_at) values ($1, $2::jsonb, now())
+       on conflict (key) do update set value = excluded.value, updated_at = now()`,
+      [key, state],
+    );
+  }
+} catch {
+  // Không ghi được mốc không làm hỏng bản sao.
+}
+
 console.log();
-console.log(`Đã sao lưu ${totalRows} dòng / ${Object.keys(backup.tables).length} bảng -> ${file} (${sizeMb} MB)`);
+console.log(`Đã sao lưu ${totalRows} dòng / ${Object.keys(backup.tables).length} bảng -> ${file} (${sizeMb} MB), đã đọc lại khớp`);
 console.log("Chép file này ra ổ cứng ngoài hoặc Google Drive — để cùng một chỗ với DB thì không phải backup.");
 
 await pool.end();

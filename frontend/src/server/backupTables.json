@@ -1,0 +1,29 @@
+{
+  "_ghi_chu": "Nguồn DUY NHẤT cho danh sách bảng sao lưu — dùng chung bởi scripts/backup-db.mjs và src/server/backup.ts. Thứ tự = thứ tự khôi phục: bảng cha trước bảng con (test kiểm tra theo khoá ngoại thật trong schema). Thêm bảng mới vào schema mà không ghi vào 'order' hoặc 'excluded' thì test đỏ — không bảng nào bị bỏ sót khỏi bản sao lưu một cách âm thầm.",
+  "order": [
+    "branches",
+    "employees",
+    "users",
+    "customers",
+    "vehicles",
+    "services",
+    "parts",
+    "appointments",
+    "service_orders",
+    "service_order_labors",
+    "service_order_parts",
+    "service_order_special_orders",
+    "part_transactions",
+    "invoices",
+    "company_settings",
+    "automation_rules",
+    "sales_ledger",
+    "purchase_ledger",
+    "attendance_logs"
+  ],
+  "excluded": {
+    "login_attempts": "Dữ liệu chống dò mật khẩu, sống 30 ngày, không có giá trị khi khôi phục.",
+    "notifications": "Sinh lại được: sau khi khôi phục, lượt canh gác đầu tiên mở lại mọi sự cố còn thật.",
+    "system_state": "Nhịp canh gác và khe lịch — khôi phục mốc cũ chỉ làm bộ canh gác tưởng mình vừa chạy."
+  }
+}

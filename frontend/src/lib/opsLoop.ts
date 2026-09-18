@@ -116,7 +116,7 @@ export function formatDuration(ms: number): string {
 // Lịch nội bộ — việc nào đến hạn
 // ---------------------------------------------------------------------------
 
-export type ScheduledJob = "watchdog" | "morning_brief" | "accounting_digest";
+export type ScheduledJob = "watchdog" | "morning_brief" | "accounting_digest" | "backup";
 
 // Việt Nam không có giờ mùa hè — cộng cứng 7 giờ là đúng quanh năm, và giữ hàm này thuần
 // (không phụ thuộc múi giờ của máy chủ, vốn là UTC trên Vercel/Docker).
@@ -143,6 +143,8 @@ export function dueScheduledJobs(now: Date): Array<{ job: ScheduledJob; slot: st
   const due: Array<{ job: ScheduledJob; slot: string }> = [
     { job: "watchdog", slot: String(Math.floor(now.getTime() / WATCHDOG_INTERVAL_MS)) },
   ];
+  // Sao lưu 2h sáng: xưởng nghỉ, không ai đang ghi dở một lệnh sửa chữa giữa chừng.
+  if (hour >= 2) due.push({ job: "backup", slot: day });
   if (hour >= 7) due.push({ job: "morning_brief", slot: day });
   if (weekday > 0 || hour >= 8) due.push({ job: "accounting_digest", slot: monday });
   return due;

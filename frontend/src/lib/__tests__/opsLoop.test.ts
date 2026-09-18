@@ -104,6 +104,11 @@ describe("dueScheduledJobs — lịch nội bộ, có bắt kịp", () => {
     expect(find("2026-09-18T18:00:00Z", "morning_brief")).toBeUndefined();
   });
 
+  it("sao lưu: từ 2h sáng VN, mỗi ngày một khe", () => {
+    expect(find("2026-09-17T18:59:00Z", "backup")).toBeUndefined(); // 01:59 ngày 18
+    expect(find("2026-09-17T19:00:00Z", "backup")?.slot).toBe("2026-09-18"); // 02:00 ngày 18
+  });
+
   it("tổng hợp tuần: thứ Hai 7h59 VN chưa, 8h có; thứ Tư vẫn cùng khe thứ Hai", () => {
     // 21/09/2026 là thứ Hai.
     expect(find("2026-09-21T00:59:00Z", "accounting_digest")).toBeUndefined();

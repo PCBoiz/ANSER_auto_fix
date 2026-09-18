@@ -54,8 +54,14 @@ services:
       # Workflow đồng bộ lên n8n sẽ gọi app bằng tên dịch vụ trong mạng compose.
       - APP_URL_FOR_N8N=http://app:3000
       - N8N_API_URL=http://n8n:5678
+      # Sao lưu mỗi ngày 2h sáng vào volume riêng, giữ 14 bản. Volume vẫn nằm trên CÙNG máy —
+      # vẫn phải chép ra ngoài định kỳ (xem docs/VIEC_CAN_LAM.md).
+      - BACKUP_DIR=/app/backups
+    volumes:
+      - anser_auto_backups:/app/backups
 
 volumes:
   anser_auto_n8n_data:
+  anser_auto_backups:
 # Cổng 5681/1027/8027 được chọn để KHÔNG đụng ANSER Flask (5680/1025/8025) và
 # ANSER Web v2 (5679/1026/8026) nếu chạy song song trên cùng một máy.

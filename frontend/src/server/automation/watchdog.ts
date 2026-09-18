@@ -1,6 +1,8 @@
 import { db } from "@/server/db/client";
 import { automationRules } from "@/server/db/schema";
+import { backupIncidents } from "@/lib/backupPolicy";
 import { findSilentRules, n8nIncidents, n8nWatchdogSilence, type IncidentInput } from "@/lib/opsLoop";
+import { backupDir, getBackupState } from "@/server/backup";
 import { syncN8nWorkflows, type SyncReport } from "@/server/automation/n8nSync";
 import type { RunSource } from "@/server/automation/rules";
 import { isN8nApiConfigured } from "@/server/n8nApi";
@@ -89,6 +91,13 @@ export async function runWatchdog(source: RunSource, sync?: SyncReport): Promise
     incidents.push(...findSilentRules(rules, now));
   } catch (error) {
     errors.push(`quy tắc: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  try {
+    const state = await getBackupState();
+    incidents.push(...backupIncidents({ configured: Boolean(backupDir()), ...state }, now));
+  } catch (error) {
+    errors.push(`sao lưu: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   if (sync || isN8nApiConfigured()) {

@@ -65,12 +65,12 @@ Công cụ dữ liệu (`cd frontend`):
 
 | Lệnh | Làm gì |
 |---|---|
-| `npm run db:backup` | Sao lưu toàn bộ bảng ra `backups/*.json` (bị gitignore) |
+| `npm run db:backup` | Sao lưu toàn bộ bảng ra `backups/*.json` (bị gitignore), đọc lại để kiểm chứng. Tự host có sao lưu tự động 2h sáng khi đặt `BACKUP_DIR` |
 | `npm run db:restore <file> --apply` | Khôi phục — xem trước mặc định, `--apply` mới ghi |
 | `npm run data:clean-demo --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
 | `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `--apply-cost` / `--apply-rename` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | 170 test vitest cho module thuần — không cần DB |
+| `npm test` | 181 test vitest cho module thuần — không cần DB |
 | `npm run check` | Đúng chuỗi CI: typecheck → lint → test → build → quét bundle. Chạy trước khi push. |
 
 ## Trạng thái hiện tại

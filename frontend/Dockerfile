@@ -25,7 +25,10 @@ RUN npm run build
 FROM node:22-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
-RUN addgroup -S app && adduser -S app -G app
+# Thư mục sao lưu thuộc user `app` TRƯỚC khi gắn volume: Docker chép quyền sở hữu này sang
+# volume mới tạo — không có bước này, volume thuộc root và mọi lần sao lưu lỗi "EACCES".
+RUN addgroup -S app && adduser -S app -G app \
+  && mkdir -p /app/backups && chown app:app /app/backups
 COPY --from=build --chown=app:app /app/.next/standalone ./
 COPY --from=build --chown=app:app /app/.next/static ./.next/static
 COPY --from=build --chown=app:app /app/public ./public
