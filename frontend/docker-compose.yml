@@ -20,6 +20,10 @@ services:
       # Không có dòng này, n8n báo URL webhook theo cổng nội bộ (5678) thay vì cổng đã
       # map ra host, khiến test thủ công bị sai URL.
       - WEBHOOK_URL=http://localhost:${N8N_PORT:-5681}/
+    # Linux không tự có host.docker.internal như Docker Desktop — thiếu dòng này thì n8n trên
+    # máy chủ Linux không gọi được app chạy ngoài Docker (npm start).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - anser_auto_n8n_data:/home/node/.n8n
 
@@ -30,6 +34,26 @@ services:
     ports:
       - "${MAILHOG_SMTP_PORT:-1027}:1025" # SMTP — node Send Email của n8n kết nối vào đây
       - "${MAILHOG_WEB_PORT:-8027}:8025" # Web UI — xem "email đã gửi" tại localhost:8027
+
+  # App chạy trong Docker — CHỈ khi bật profile: `docker compose --profile app up -d --build`.
+  # Không bật profile thì `docker compose up -d` vẫn như cũ (chỉ n8n + MailHog, app chạy ngoài).
+  app:
+    profiles: ["app"]
+    build: .
+    container_name: anser-auto-app
+    # Chết thì Docker dựng lại — nửa "tự sửa" của vòng lặp ở mức tiến trình. Workflow canh gác
+    # trong n8n vẫn báo nếu app chết liên tục (crash loop) vì /api/health không trả lời.
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    # DATABASE_URL, JWT_SECRET, N8N_INTERNAL_TOKEN, N8N_API_KEY, CRON_SECRET... — tạo file này
+    # từ .env.local.example; .gitignore đã chặn .env*.
+    env_file: .env.app
+    environment:
+      - INTERNAL_SCHEDULER=true
+      # Workflow đồng bộ lên n8n sẽ gọi app bằng tên dịch vụ trong mạng compose.
+      - APP_URL_FOR_N8N=http://app:3000
+      - N8N_API_URL=http://n8n:5678
 
 volumes:
   anser_auto_n8n_data:
