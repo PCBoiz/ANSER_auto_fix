@@ -28,6 +28,10 @@ Nguyên tắc: **không ai bấm "đã xong"**. Sự cố chỉ đóng khi lần
 | Sao lưu (`backup`) | Mỗi ngày, từ 2h sáng | Lịch nội bộ, chỉ khi có `BACKUP_DIR` |
 | Bản tin sáng lên chuông (`morning_brief`) | Mỗi ngày, từ 7h | Lịch nội bộ / Vercel Cron |
 | Tổng hợp kế toán lên chuông (`accounting_digest`) | Thứ Hai, từ 8h | Lịch nội bộ / Vercel Cron |
+| Báo cáo tuần cho chủ gara (`owner_weekly_report`) | Thứ Hai, từ 8h | Lịch nội bộ / Vercel Cron (chuông) + n8n (email) |
+| Chặn thất thoát (`revenue`) | Ngay sau mỗi lần sửa lệnh + mỗi lượt canh gác | App |
+| Email báo nhanh sự cố mức cao | Cuối mỗi lượt canh gác | App → n8n (`incident_alert.json`) |
+| Nhịp ra canh gác bên ngoài | Cuối mỗi lượt canh gác theo lịch | App → `HEARTBEAT_URL` |
 | Email bản tin, cảnh báo kho, nhắc khách… | Theo từng workflow | n8n |
 | Canh gác app (`app_watchdog.json`) | Mỗi 30 phút | n8n |
 
@@ -57,6 +61,24 @@ Danh sách hiện tại và cách làm: `docs/VIEC_CAN_LAM.md` mục A.
 | `watchdog:n8n:app-watchdog-silent` | cao | Workflow "Canh gác app" trên n8n **đã từng** hỏi app nhưng im quá 2 giờ. App chết lúc này sẽ không ai được báo | Mở n8n: workflow còn Active? Lịch sử chạy có lỗi? Hoặc bấm Đồng bộ workflow | n8n hỏi lại |
 | `watchdog:backup:failed` | cao | Lần sao lưu gần nhất lỗi (kèm lỗi: đầy đĩa, không có quyền ghi…) | Xử lý theo lỗi | Lần sao lưu sau thành công |
 | `watchdog:backup:stale` | cao | Bản sao thành công gần nhất quá 36 giờ khi sao lưu tự động đang bật | Lịch nội bộ còn bật không (`INTERNAL_SCHEDULER`)? App có bị tắt đêm qua không? | Có bản mới |
+| `watchdog:backup:copy-failed` | cao | Sao lưu trên máy tốt nhưng không chép được sang `BACKUP_COPY_DIR` (ổ Google Drive chưa gắn, hết chỗ…) | Mở thư mục đó trên máy chủ, xem lỗi trong thông báo | Lần sao lưu sau chép được |
+
+### Thất thoát doanh thu (`revenue:order:<id>:*`)
+
+Chỉ xét lệnh chưa huỷ và **chưa lập hoá đơn** (đã có hoá đơn thì tiền đã chốt).
+
+| Khoá (đuôi) | Mức | Nghĩa | Làm gì | Tự đóng khi |
+|---|---|---|---|---|
+| `:zero` | cao | Lệnh có dòng phụ tùng hoặc dòng công **0đ** — khách không bị tính tiền | Điền giá bán (Kho / Bảng giá), bỏ dòng rồi thêm lại; hoặc bỏ dòng nếu thật sự miễn phí. Lập hoá đơn khi còn dòng 0đ phải xác nhận | Hết dòng 0đ, hoặc đã lập hoá đơn |
+| `:below-cost` | thường | Dòng phụ tùng bán thấp hơn giá vốn lúc xuất | Xem lại giá bán | Hết dòng dưới vốn |
+| `:discount` | thường | Giảm giá ≥ 10% **và** ≥ 500.000đ do nhân viên đặt, hoặc bị sửa sau khi đã duyệt | Quản lý mở lệnh → **Duyệt** | Quản lý duyệt đúng mức hiện tại |
+| `:not-invoiced` | cao | Đã giao xe quá 24 giờ mà chưa lập hoá đơn — doanh thu chưa được ghi nhận | Hoá đơn → Xuất hoá đơn | Lập hoá đơn |
+
+### Mức sử dụng (`usage:*`)
+
+| Khoá | Mức | Nghĩa | Tự đóng khi |
+|---|---|---|---|
+| `usage:no-orders` | thường | N ngày làm việc (mặc định 2, bỏ Chủ nhật) liền không có lệnh sửa chữa mới. Chỉ canh sau khi đã có lệnh đầu tiên | Có lệnh mới |
 
 ### Hệ thống đã tự khắc phục (`watchdog:autofix:*`, chữ xanh)
 Không cần làm gì. Đây là dấu vết để biết hệ thống đã phải can thiệp:
@@ -78,6 +100,14 @@ hoặc cái gì đang xoá nó. Hãy tìm nguyên nhân.
 | 🟢 ANSER Auto đã hoạt động lại | Đã hết, kèm thời gian gián đoạn | Không cần làm gì |
 
 Chống spam: báo ngay lần đầu, nhắc lại mỗi 3 giờ (không phải mỗi 30 phút), báo một lần khi hồi phục.
+
+### Email báo nhanh (mới 20/09)
+
+- Sự cố **mức cao** loại `watchdog`, `revenue`, `usage` mới mở → gom lại **một** email trong lượt
+  canh gác kế tiếp (tối đa 30 phút). Việc chặn go-live không gửi email (đã có trang riêng).
+- Sự cố đã được báo mà nay tự đóng → email 🟢 "đã khắc phục sau X".
+- Gửi không được (n8n tắt, SMTP lỗi) → **không** đánh dấu đã báo → lượt sau gửi lại.
+- Mỗi sự cố báo đúng một lần khi mở, một lần khi đóng; tái phát thì báo lại.
 
 ## 5. `/api/health`
 
@@ -108,6 +138,10 @@ curl -s -H "X-Internal-Token: $N8N_INTERNAL_TOKEN" http://localhost:3000/api/hea
 | `N8N_INTERNAL_TOKEN` | Bảo vệ `/api/n8n/internal/*` và chi tiết `/api/health` | Thiếu ở production thì endpoint trả 503 |
 | `N8N_NOTIFY_EMAIL` | Email dự phòng khi Cài đặt chưa có email doanh nghiệp | — |
 | `CRON_SECRET` | Bảo vệ `/api/cron/automation` | Vercel Cron tự gửi |
+| `N8N_WEBHOOK_URL` | App gọi n8n: email báo nhanh, báo tiến độ cho khách | Compose: `http://n8n:5678/webhook` |
+| `HEARTBEAT_URL` | Canh gác từ bên ngoài (healthchecks.io) | Khoẻ → URL gốc; hỏng → `/fail`; máy chết → nhịp ngừng |
+| `BACKUP_COPY_DIR` | Bản sao thứ hai, ngoài máy (thư mục Google Drive/OneDrive) | Docker: kèm `BACKUP_COPY_HOST_DIR` |
+| `APP_PUBLIC_URL` | Link "Mở trang xử lý" trong email báo nhanh | Tuỳ chọn |
 
 ## 7. Khi nghi vòng lặp không chạy
 

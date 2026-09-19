@@ -20,6 +20,10 @@
 | Khoá thông báo kèm ngày (`…:2026-09-18`) | Sửa xong vẫn còn thông báo hôm nay; chưa sửa thì mỗi ngày thêm một bản | Khoá **không** ngày, có vòng đời mở/đóng | `ARCHITECTURE.md` §12 |
 | Mốc "lịch còn chạy" bị lịch nội bộ đẩy | n8n chết cả tuần mà bản tin vẫn trông đúng giờ | `last_scheduled_run_at` chỉ tính nguồn n8n | `automation/rules.ts` |
 | Danh sách bảng sao lưu viết cứng | Lệch schema (19/22) mà không ai biết | Một file JSON dùng chung + test khoá | `backupTables.json` |
+| Suy "lần đăng nhập cuối" từ `login_attempts` | Bảng đó XOÁ nhật ký khi đăng nhập thành công, nên lệnh điền ngược trong migration 0011 không điền được gì | Cột riêng `users.last_login_at`, ghi ngay trong route đăng nhập | `store/users.ts — touchLastLogin` |
+| `order by … desc` với cột có NULL | Postgres đặt NULL **lên đầu** khi DESC | Ở báo cáo tuần đó lại là điều muốn (tài khoản chưa từng đăng nhập nổi lên trên); chỗ khác nhớ `nulls last` | `buildOwnerWeekly` |
+| Việc chạy sau khi đã trả lời người dùng | Chờ đồng bộ chuông trong route = người dùng chờ thêm ~0,7s mỗi lần thêm dòng | `after()` của `next/server` | route sửa lệnh |
+| Thử luồng lệnh sửa chữa trên DB thật | Sequence KHÔNG quay lui theo transaction — tạo lệnh thử là mất số `RO-2026-xxxx` thật | Tạo lệnh thử bằng SQL với **mã tự đặt** (`RO-E2E-…`), gọi API thật cho các bước sau, xoá khi xong; so sequence trước/sau | `docs/NHAT_KY_CAI_TIEN.md` đợt 5 |
 | Server standalone (`node server.js`) | **Không** tự đọc `.env.local`, nên `DATABASE_URL is not set` và mọi trang 500 | Truyền env: `node --env-file=…` hoặc `env_file` của compose | `Dockerfile` |
 
 ## 2. Bẫy của n8n (đo trên n8n 2.39.7)
@@ -41,6 +45,9 @@
   `onError: continueRegularOutput`. Nếu không, đúng lúc app chết (cần báo nhất) workflow lại dừng
   giữa chừng.
 - API key cần đủ scope (`workflow:activate`/`deactivate`…). Xem `ARCHITECTURE.md` §8.4.2.
+- Muốn app biết email **đã thật sự gửi** qua webhook: Webhook node `responseMode: responseNode` +
+  node "Respond to Webhook" sau node Email (200 khi gửi xong, 502 khi SMTP lỗi). `lastNode`/`onReceived`
+  trả 200 trước khi biết kết quả. Và webhook n8n không có xác thực sẵn — tự kiểm token trong node IF.
 - Hai project Compose cùng tên "frontend" sẽ xoá container của nhau. Xem `ARCHITECTURE.md` §8.4.1.
 
 ## 3. Bẫy công cụ và môi trường
@@ -66,13 +73,15 @@
 
 ## 5. Cách kiểm chứng lại
 
-**Hằng ngày trước khi push:** `npm run check` (typecheck → lint → 181 test → build → quét bundle).
+**Hằng ngày trước khi push:** `npm run check` (typecheck → lint → 211 test → build → quét bundle).
 Không cần DB.
 
 **Test chỉ cho module thuần** (`src/lib/`, và các hàm tách khỏi chỗ chạm DB). Muốn test được thì
 đặt logic ở đó. Đáng chú ý:
 - `opsLoop.test.ts`: đối soát sự cố, nhịp kỳ vọng, khe lịch theo giờ Việt Nam, sức khoẻ.
-- `n8nTemplates.test.ts`: render **cả 10** file mẫu, vân tay, ranh giới tự sửa/người quyết.
+- `n8nTemplates.test.ts`: render **cả 12** file mẫu, vân tay, ranh giới tự sửa/người quyết.
+- `revenueGuard.test.ts`, `usage.test.ts`, `incidentAlerts.test.ts` (20/09): dòng 0đ, duyệt giảm giá
+  theo số tiền, ngày làm việc theo giờ VN, email báo nhanh, URL nhịp ra ngoài.
 - `appWatchdogWorkflow.test.ts`: **chạy thật** đoạn mã của node Code trong workflow canh gác với
   đồng hồ giả.
 - `backup.test.ts`: danh sách bảng khớp schema và khoá ngoại.

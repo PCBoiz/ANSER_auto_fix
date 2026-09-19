@@ -1,6 +1,6 @@
 # Việc bạn cần làm — ANSER Auto
 
-> Cập nhật: 18/09/2026. Đây là những việc **code không làm thay được**: cần tài khoản, mật khẩu,
+> Cập nhật: 20/09/2026. Đây là những việc **code không làm thay được**: cần tài khoản, mật khẩu,
 > dữ liệu thật hoặc một quyết định của bạn.
 >
 > Nguồn sự thật vẫn là trang **Kiểm tra vận hành** (`/dashboard/readiness`). Trang đó đo trực
@@ -76,8 +76,10 @@ lên chuông; chỉ email là dừng.
       `1025`, không SSL. Production: SMTP thật (Gmail/Zoho…). Chỉ cần tạo; app tự gán vào mọi node
       Gửi Email.
 - [ ] **B5. Quyết định rồi bấm "Đồng bộ workflow"** (trang Tự động hoá).
-  - Nút này tạo đủ 10 workflow và **bật** workflow của mọi quy tắc đang bật.
-  - Cả 9 quy tắc hiện đang "bật". Nhiều khả năng đó chỉ là giá trị mặc định lúc tạo.
+  - Nút này tạo đủ 12 workflow và **bật** workflow của mọi quy tắc đang bật. Hai workflow hạ tầng
+    ("Canh gác app", "Báo nhanh sự cố") chỉ gửi cho chính gara và được tự bật.
+  - Cả 10 quy tắc hiện đang "bật". Nhiều khả năng đó chỉ là giá trị mặc định lúc tạo. Quy tắc
+    mới "Báo cáo tuần cho chủ gara" chỉ gửi nội bộ.
   - **4 workflow gửi email thẳng cho khách thật:** nhắc bảo dưỡng, nhắc lịch hẹn, báo tiến độ sửa
     chữa, nhắc chờ nghiệm thu.
   - Muốn chưa gửi cho khách thì **tắt 4 quy tắc đó trong app trước**, rồi mới bấm Đồng bộ.
@@ -88,6 +90,24 @@ lên chuông; chỉ email là dừng.
 - [ ] **B7. Thử email cảnh báo app chết (khuyên làm một lần).** Tắt app 40 phút. Bạn sẽ nhận
       email 🔴 "không phản hồi". Bật lại, trong 30 phút sẽ nhận email 🟢 "đã hoạt động lại". Xem
       ở MailHog http://localhost:8027 (máy dev).
+- [ ] **B8. Đặt `N8N_WEBHOOK_URL`** (đã có trong `.env.local`: `http://localhost:5681/webhook`).
+      Đây là đường app gửi **email báo nhanh**: sự cố mức cao mới mở (dòng 0đ, giao xe chưa lập
+      hoá đơn, sao lưu lỗi, lịch ngừng chạy…) được gom lại gửi trong vòng 30 phút, kèm email "đã
+      khắc phục" khi tự đóng. Docker compose đã đặt sẵn cho dịch vụ `app`.
+
+## B+. Báo động khi cả máy chủ sập (mới 20/09) — khuyên làm ngay khi chạy thật
+
+App và n8n canh nhau, nhưng thường nằm cùng một máy: mất điện, mất mạng, treo máy thì cả hai cùng
+im, không ai gửi được email báo. Cần một dịch vụ **bên ngoài** đợi nhịp.
+
+- [ ] **B+1.** Tạo tài khoản miễn phí ở https://healthchecks.io → **Add Check**: Period **30 phút**,
+      Grace **30 phút** (Vercel: Period 1 ngày). Integrations → bật **Email** tới email của bạn.
+- [ ] **B+2.** Chép "Ping URL" (dạng `https://hc-ping.com/<uuid>`) vào `HEARTBEAT_URL` trong
+      `.env.local` / `.env.app`, khởi động lại app. Cần `INTERNAL_SCHEDULER=true` (hoặc Vercel Cron).
+- [ ] **B+3.** Sau 30 phút, trang healthchecks.io phải báo **Up**. Hệ thống hỏng (vd n8n chết)
+      thì app gửi `/fail`, bạn nhận email ngay; máy chết thì nhịp ngừng, bạn nhận email sau ~1 giờ.
+- [ ] **B+4. (tuỳ chọn)** `APP_PUBLIC_URL=http://<ip-máy-chủ>:3000` để email báo nhanh có link
+      "Mở trang xử lý" bấm thẳng tới lệnh cần sửa.
 
 ---
 
@@ -103,7 +123,7 @@ Chọn **một** trong hai.
 - [ ] `npm run db:migrate`. Migration chạy từ máy có mã nguồn, không chạy trong image.
 - [ ] `docker compose --profile app up -d --build`
       - App ở cổng 3000, tự khởi động lại khi chết.
-      - Lịch nội bộ bật sẵn: canh gác 30 phút, bản tin 7h, tổng hợp kế toán 8h thứ Hai.
+      - Lịch nội bộ bật sẵn: canh gác 30 phút, bản tin 7h, tổng hợp kế toán + báo cáo tuần 8h thứ Hai.
       - Sao lưu 2h sáng vào volume `anser_auto_backups`, giữ 14 bản.
 - [ ] Vào app → Tự động hoá → **Đồng bộ workflow** một lần. n8n sẽ gọi app qua `http://app:3000`.
 - [ ] Dockerfile **chưa từng được build thật** (Docker trên máy dev hỏng). Lần build đầu có lỗi
@@ -126,11 +146,18 @@ Chọn **một** trong hai.
 
 ## D. Nên làm sớm
 
-- [ ] **D1. Chép bản sao lưu ra ngoài máy.**
-  - `frontend/backups/` đang có 2 bản (17/09 và 18/09).
-  - Chúng chứa **mã băm mật khẩu và thông tin khách**, nên không đưa lên chỗ công khai.
-  - Chép vào ổ ngoài hoặc Google Drive riêng, **mỗi tuần**.
-  - Bản sao nằm cùng máy với DB thì không phải backup.
+- [ ] **D1. Cho bản sao lưu tự ra khỏi máy** (đã chọn 20/09: thư mục đồng bộ sẵn có).
+  - Cài **Google Drive for Desktop** (hoặc OneDrive) trên máy chủ, đăng nhập tài khoản **riêng** của
+    gara. Tạo thư mục, vd `G:\My Drive\ANSER-sao-luu`.
+  - Chạy thẳng trên máy: đặt `BACKUP_DIR=backups` và `BACKUP_COPY_DIR=G:/My Drive/ANSER-sao-luu`
+    trong `.env.local` (cần `INTERNAL_SCHEDULER=true`).
+  - Chạy bằng Docker: tạo file `frontend/.env` chứa `BACKUP_COPY_HOST_DIR=G:/My Drive/ANSER-sao-luu`,
+    thêm `BACKUP_COPY_DIR=/app/backups-copy` vào `.env.app`, rồi `docker compose --profile app up -d`.
+  - Mỗi đêm 2h: sao lưu → đọc lại → chép sang thư mục đó → đọc lại so sha256. Chép lỗi (ổ Drive
+    chưa gắn…) thì chuông + email báo. **Kiểm một lần** trên drive.google.com xem file đã lên mây chưa:
+    app chỉ biết đã ghi vào thư mục, còn đẩy lên mây là việc của Google Drive.
+  - File chứa **mã băm mật khẩu và thông tin khách** — không chia sẻ thư mục đó cho ai.
+  - `frontend/backups/` đang có bản 17/09 và 18/09 — chép tay chúng vào thư mục trên một lần.
 - [ ] **D2. Diễn tập khôi phục một lần.**
   1. Neon Console → Branches → tạo branch từ main.
   2. Tạm trỏ `DATABASE_URL` sang branch đó.
@@ -167,6 +194,8 @@ Chọn **một** trong hai.
 | Bảo hiểm chi trả một phần | Sổ bán hàng (phần lớn khách là công ty bảo hiểm) không nối được với lệnh sửa chữa, vì dữ liệu gốc không có biển số. Khi gara bắt đầu lập lệnh trong app, có thêm liên kết `sổ bán ↔ hoá đơn` không? |
 | Cột "tiền thuế được giảm" trong sổ | 213/232 chứng từ bán thấp hơn tiền hàng 0,6%/0,2% (thuế GTGT theo phương pháp trực tiếp). Nếu cần khai thuế từ app thì phải có cột riêng. |
 | Test cho phần chạm DB | Cần một Neon branch riêng cho CI và `DATABASE_URL` trong GitHub Secrets. Có muốn không? |
+| Ngưỡng giảm giá cần duyệt | Đang đặt: giảm **từ 10%** và **từ 500.000đ** trở lên (cả hai) do nhân viên đặt thì chờ quản lý duyệt; quản lý tự đặt thì coi như đã duyệt. Muốn khác thì báo lại (`lib/revenueGuard.ts` — `DISCOUNT_REVIEW`). |
+| "Xưởng ngừng lập lệnh" | Đang đặt: **2 ngày làm việc** (bỏ Chủ nhật) liền không có lệnh mới thì báo lên chuông. Sửa ở Tự động hoá → Báo cáo tuần cho chủ gara → Ngưỡng. Chỉ bắt đầu canh sau khi có lệnh đầu tiên. |
 | `npm audit`: 6 lỗ hổng mức trung bình | Qua `drizzle-kit` (công cụ dev, lỗ hổng ở dev server của esbuild, app không dùng) và `exceljs → uuid` (lỗi ở `v3/v5/v6` khi truyền `buf`). "Bản sửa" npm đề xuất là **hạ phiên bản** (drizzle-kit 0.18, exceljs 3.4), sẽ làm hỏng code. Đề xuất: theo dõi, nâng khi thư viện ra bản mới. CI chỉ chặn mức high. |
 
 ---

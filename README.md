@@ -75,7 +75,7 @@ Công cụ dữ liệu (`cd frontend`):
 | `npm run data:clean-demo -- --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
 | `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `-- --apply-cost` / `-- --apply-rename` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | 181 test vitest cho module thuần — không cần DB |
+| `npm test` | 211 test vitest cho module thuần — không cần DB |
 | `npm run check` | Đúng chuỗi CI: typecheck → lint → test → build → quét bundle. Chạy trước khi push. |
 
 > **Dấu `--` ở giữa là bắt buộc** với các cờ `--apply…`: `npm run data:clean-demo --apply` bị npm nuốt mất
@@ -100,6 +100,7 @@ Các mục trong sidebar:
 | Kho phụ tùng | CRUD, phiếu nhập/xuất có transaction, cảnh báo tồn thấp theo ngưỡng riêng |
 | Hoá đơn | Xuất từ lệnh đã hoàn tất, VAT, ghi nhận thanh toán, theo dõi công nợ |
 | Báo cáo | Doanh thu ngày/tuần/tháng, cơ cấu công vs phụ tùng, top hạng mục và phụ tùng |
+| Lệnh sửa chữa (bổ sung 20/09) | Dòng 0đ tô đỏ + cảnh báo ngay; giảm giá lớn do nhân viên đặt chờ quản lý **Duyệt**; lập hoá đơn khi còn dòng 0đ phải xác nhận. Mọi chỗ rò tiền lên chuông và tự đóng khi sửa |
 | Tự động hoá | Bật/tắt và ngưỡng là công tắc thật (workflow đọc lại từ app trước khi gửi); hiện lần chạy gần nhất + nguồn (lịch / chạy tay) để biết lịch có tự nổ không; **Đồng bộ workflow** lên n8n bằng một nút; xem/tải mẫu workflow JSON |
 | Chi nhánh | CRUD xưởng, chuyên môn (máy / đồng-sơn…), email nhận cảnh báo; cảnh báo tên thiếu dấu |
 | Nhân sự | CRUD hồ sơ nhân viên, chức vụ, chuyên môn, đơn giá công |

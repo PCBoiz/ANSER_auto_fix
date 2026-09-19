@@ -612,3 +612,24 @@ Không chạy trên Vercel (hệ thống file tạm). Docker: volume `anser_auto
 **cùng máy**, nên phải chép ra ngoài định kỳ. Đã thử trên DB thật: 1.186 dòng / 19 bảng,
 đọc lại khớp, xoay vòng xoá đúng 1 bản, `restore-db.mjs` (xem trước) đọc được file mới.
 
+## 13. Tự động hoá đợt 20/09/2026 — thất thoát, báo nhanh, canh gác ngoài, mức sử dụng
+
+Chủ gara chọn 4 nhóm (xem `docs/NHAT_KY_CAI_TIEN.md` đợt 5). Cả 4 cắm vào **cùng** vòng lặp §12:
+phát hiện bằng hàm thuần → `syncIncidents(kind)` → chuông + email → tự đóng khi đo lại không còn.
+
+| `kind` | Phát hiện | Khi nào chạy | Tự đóng khi |
+|---|---|---|---|
+| `revenue` | `lib/revenueGuard.ts` | `after()` của mọi route sửa lệnh/hoá đơn + mỗi lượt canh gác | Sửa giá, bỏ dòng, quản lý duyệt, lập hoá đơn |
+| `usage` | `lib/usage.ts` | Mỗi lượt canh gác | Có lệnh mới |
+| `watchdog` (thêm `backup:copy-failed`) | `lib/backupPolicy.ts` | Mỗi lượt canh gác | Lần sao lưu sau chép được |
+
+Ba quyết định đáng nhớ:
+
+- **Không chặn, nhưng chốt ở hoá đơn.** Thêm dòng 0đ chỉ cảnh báo (KTV không bị kẹt khi quản lý
+  vắng). Hoá đơn là chỗ tiền bị chốt, nên chỉ ở đó mới bắt xác nhận (409 `ZERO_PRICE_LINES`).
+- **Duyệt theo SỐ TIỀN, không theo cờ.** `service_orders.discount_approved_amount`: sửa mức giảm
+  sau khi duyệt thì tự thành "chưa duyệt" mà không cần code theo dõi thay đổi.
+- **Email "ít nhất một lần".** `notifications.alerted_at` chỉ ghi sau khi n8n trả 200. Webhook
+  dùng `responseNode`, nên 200 nghĩa là SMTP đã nhận thư. Khi n8n chết, kênh này chết theo, nên
+  mới cần nhịp `HEARTBEAT_URL` đi thẳng ra dịch vụ bên ngoài, không qua n8n.
+

@@ -76,6 +76,28 @@ gửi thẳng cho khách thật. Việc bật chờ người bấm "Đồng bộ
 | `02e8e30` | Sao lưu tự động vào vòng lặp: 2h sáng, đọc lại đối chiếu số dòng, xoay vòng giữ 14 bản, canh gác báo khi lỗi hoặc quá 36 giờ. Kiểm tra vận hành nhắc khi quá 7 ngày không có bản nào. Danh sách bảng về một file JSON dùng chung (danh sách cũ đã lệch schema 19/22). Có test khoá lệch. |
 | commit ngay sau `02e8e30` | Sửa hướng dẫn sai `npm run … --apply`: npm nuốt cờ, script chỉ chạy xem trước mà người gõ tưởng đã xoá/ghi. Script giờ in "CHƯA XOÁ GÌ" kèm đúng lệnh. Thêm các file `docs/*.md`. Sửa số workflow gửi khách: là 4, trước đây ghi nhầm 3. |
 
+## Đợt 5 — 20/09/2026: "dựng thêm các trình tự động hoá hữu ích và cần thiết"
+
+Đã hỏi trước khi làm. Phát hiện then chốt lúc hỏi: **phần vận hành còn trống** (0 lệnh, 0 khách,
+0 xe, 0 lịch hẹn, 0 hoá đơn) — nên không làm thêm tự động hoá gửi khách (chưa có ai để gửi), mà
+làm những thứ có ích từ ngày đầu dùng thật. Chủ gara chọn cả 4 nhóm; dòng 0đ = "cho thêm, báo
+lên chuông"; kênh báo = **chỉ email**; sao lưu ra ngoài = **thư mục đồng bộ sẵn có**.
+
+| Nhóm | Làm gì | Ở đâu |
+|---|---|---|
+| Chặn thất thoát | Dò dòng 0đ, bán dưới vốn, giảm giá lớn chưa duyệt, giao xe >24h chưa lập hoá đơn. Chạy ngay sau mỗi lần sửa lệnh (`after()`) + mỗi lượt canh gác; tự đóng khi sửa. Cảnh báo tức thời trên màn hình khi thêm dòng. Lập hoá đơn còn dòng 0đ phải xác nhận. Nút "Duyệt" giảm giá cho quản lý (lưu SỐ TIỀN đã duyệt). | `lib/revenueGuard.ts`, `server/revenueGuard.ts`, migration 0011 |
+| Email báo nhanh | Sự cố mức cao mới mở / đã đóng → một email mỗi lượt qua workflow mới `incident_alert.json` (kiểm token, chỉ trả 200 sau khi gửi xong). Giao nhận ít nhất một lần. | `lib/incidentAlerts.ts`, `server/incidentAlerts.ts` |
+| Canh gác từ ngoài + sao lưu ra ngoài | Nhịp tới `HEARTBEAT_URL` (healthchecks.io) mỗi lượt; hỏng → `/fail`. Sao lưu chép thêm sang `BACKUP_COPY_DIR`, đọc lại so sha256. Phép đo sức khoẻ tách ra dùng chung. | `server/health.ts`, `server/backup.ts` |
+| Theo dõi mức sử dụng | Ghi lần đăng nhập cuối; báo khi N ngày làm việc liền không có lệnh (chỉ sau lệnh đầu tiên); **báo cáo tuần cho chủ gara** (thứ Hai 8h: lệnh, xe giao, doanh thu so tuần trước; ai dùng app; thất thoát; vòng tự động) — chuông + email qua workflow mới `owner_weekly_report.json`. | `lib/usage.ts`, `digests.ts — buildOwnerWeekly` |
+
+Đã kiểm chứng: 211 test; qua API thật với một lệnh thử tạo bằng SQL **mã tự đặt** (không tốn số
+RO/HD thật): dòng 0đ → cảnh báo + chuông mở; lập hoá đơn → 409 hỏi xác nhận; sửa giá → tự đóng;
+giảm giá đổi sau khi duyệt → mở; quản lý Duyệt → đóng. Email báo nhanh, nhịp ngoài, chép sao lưu
+thử với máy chủ giả đóng vai n8n + healthchecks.io (gồm cả nhánh lỗi). Giao diện thử bằng
+trình duyệt thật (sửa một chỗ vỡ bố cục của nút duyệt). Mọi dữ liệu thử đã xoá, `system_state` trả
+nguyên. Báo cáo tuần dựng từ dữ liệu thật lộ ra 2 lỗi đã sửa: chưa nối ghi lần đăng nhập vào
+route; họ tên bị đảo thứ tự.
+
 ---
 
 ## Số liệu đã đo trên dữ liệu thật (đừng đo lại từ đầu)
@@ -89,12 +111,14 @@ gửi thẳng cho khách thật. Việc bật chờ người bấm "Đồng bộ
 | Quy tắc tự động trong DB | Cả 9 quy tắc đều "bật", chưa có lần chạy theo lịch nào | Không tự bật workflow gửi khách |
 | Sao lưu | 1.186 dòng / 19 bảng / ~0,5 MB | Nhẹ, sao lưu hằng ngày thoải mái |
 | Tổng quan | ~8s → ~0,34s | Gộp truy vấn |
+| Phần vận hành (20/09) | 0 lệnh, 0 khách, 0 xe, 0 lịch hẹn, 0 hoá đơn, 0 chấm công | Chưa làm tự động hoá gửi khách |
+| `login_attempts` | Bị XOÁ khi đăng nhập thành công — không có dòng `success` nào | Không suy được "lần đăng nhập cuối" từ đó |
 
-## Trạng thái cuối (18/09/2026)
+## Trạng thái cuối (20/09/2026)
 
-- **181 test**, `npm run check` sạch. CI trên fork đỏ vì tài khoản GitHub bị khoá thanh toán,
+- **211 test** (20/09), `npm run check` sạch. CI trên fork đỏ vì tài khoản GitHub bị khoá thanh toán,
   không phải do code.
-- **Migration 0000–0010 đã áp vào DB thật.**
+- **Migration 0000–0011 đã áp vào DB thật.**
 - **Kiểm tra vận hành:** 5 việc chặn + 7 cảnh báo, đều là việc của người vận hành (xem
   `VIEC_CAN_LAM.md`).
 - **Sự cố đang mở:** 5 việc chặn go-live + "Không liên lạc được với n8n" (Docker hỏng).
