@@ -109,6 +109,8 @@ export async function runBackup(source: BackupState["source"]): Promise<BackupRe
     // thiếu một bảng mà vẫn báo thành công còn nguy hiểm hơn không có bản sao.
     const counts: Record<string, number> = {};
     for (const table of plan.order) {
+      // Tên bảng đi vào sql.raw: chỉ nhận định danh thường (chữ thường, số, gạch dưới).
+      if (!/^[a-z][a-z0-9_]*$/.test(table)) throw new Error(`Tên bảng không hợp lệ trong backupTables.json: ${table}`);
       const r = (await db.execute(sql.raw(`select * from "${table}"`))) as unknown as Rows;
       backup.tables[table] = r.rows;
       counts[table] = r.rows.length;

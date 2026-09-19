@@ -92,11 +92,16 @@ export function detectRevenueLeaks(orders: GuardOrder[], now: Date): IncidentInp
 
     const zero = zeroPriceLines(o.lines);
     if (zero.length > 0) {
+      // Lệnh đã giao thì các dòng bị khoá — chỉ còn lập hoá đơn (có xác nhận) để chốt.
+      const fix =
+        o.status === "delivered"
+          ? "Lệnh đã giao nên không sửa dòng được nữa: vào Hoá đơn → Xuất hoá đơn và xác nhận nếu đúng là miễn phí."
+          : "Điền giá bán (Kho phụ tùng / Bảng giá dịch vụ) rồi bỏ dòng và thêm lại, hoặc bỏ dòng nếu thật sự miễn phí.";
       out.push({
         key: `revenue:order:${o.id}:zero`,
         severity: "high",
         title: `${label}: ${zero.length} dòng 0đ`,
-        body: `${listNames(zero)}. Khách không bị tính tiền các dòng này. Điền giá bán (Kho phụ tùng / Bảng giá dịch vụ) rồi bỏ dòng và thêm lại, hoặc bỏ dòng nếu thật sự miễn phí.`,
+        body: `${listNames(zero)}. Khách không bị tính tiền các dòng này. ${fix}`,
         href,
       });
     }

@@ -73,13 +73,28 @@ export type WatchdogResult = {
   summary: string;
 };
 
+let inFlight: Promise<WatchdogResult> | null = null;
+
 /**
- * Một lượt canh gác.
- *
+ * Một lượt canh gác. Hai lượt gọi chồng nhau trong cùng tiến trình (lịch + người bấm "Kiểm tra
+ * lại ngay") thì lượt sau dùng kết quả của lượt đang chạy — tránh gửi email báo nhanh hai lần
+ * cho cùng một sự cố. Trên serverless mỗi lời gọi là một tiến trình riêng, nhưng ở đó chỉ có
+ * Vercel Cron mỗi ngày một lần nên không chồng.
+ */
+export async function runWatchdog(source: RunSource, sync?: SyncReport): Promise<WatchdogResult> {
+  if (inFlight && !sync) return inFlight;
+  const run = runWatchdogOnce(source, sync).finally(() => {
+    if (inFlight === run) inFlight = null;
+  });
+  if (!sync) inFlight = run;
+  return run;
+}
+
+/**
  * `sync` truyền sẵn khi NGƯỜI vừa bấm "Đồng bộ workflow": dùng luôn kết quả đó để đóng các sự
  * cố vừa được sửa, và không ghi "tự khắc phục" cho việc người làm.
  */
-export async function runWatchdog(source: RunSource, sync?: SyncReport): Promise<WatchdogResult> {
+async function runWatchdogOnce(source: RunSource, sync?: SyncReport): Promise<WatchdogResult> {
   const now = new Date();
   const incidents: IncidentInput[] = [];
   const errors: string[] = [];

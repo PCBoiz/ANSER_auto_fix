@@ -2,7 +2,7 @@ import { and, desc, eq, gt, inArray, isNull, notInArray, sql } from "drizzle-orm
 import { db } from "@/server/db/client";
 import { notifications, users } from "@/server/db/schema";
 import type { UserFlow } from "@/server/session";
-import { planIncidents, type IncidentInput } from "@/lib/opsLoop";
+import { INCIDENT_KINDS, planIncidents, type IncidentInput } from "@/lib/opsLoop";
 
 export type Notification = typeof notifications.$inferSelect;
 
@@ -86,7 +86,7 @@ export async function pruneNotifications(olderThanDays = 30) {
     .where(
       and(
         sql`${notifications.createdAt} < now() - (${olderThanDays} || ' days')::interval`,
-        sql`not (${notifications.resolvedAt} is null and ${notifications.kind} in ('readiness', 'watchdog'))`,
+        sql`not (${notifications.resolvedAt} is null and ${notifications.kind} in ${[...INCIDENT_KINDS]})`,
       ),
     );
 }
@@ -234,7 +234,7 @@ export type LoopStats = {
 export async function getLoopStats(): Promise<LoopStats> {
   const [row] = await db
     .select({
-      open: sql<number>`count(*) filter (where ${notifications.resolvedAt} is null and ${notifications.kind} in ('readiness','watchdog'))::int`,
+      open: sql<number>`count(*) filter (where ${notifications.resolvedAt} is null and ${notifications.kind} in ${[...INCIDENT_KINDS]})::int`,
       resolved7d: sql<number>`count(*) filter (where ${notifications.resolvedAt} > now() - interval '7 days' and ${notifications.resolution} in ('verified','auto'))::int`,
       autoResolved7d: sql<number>`count(*) filter (where ${notifications.resolvedAt} > now() - interval '7 days' and ${notifications.resolution} = 'auto')::int`,
       // Chỉ tính việc đóng nhờ ĐO LẠI ("verified"). Việc tự sửa mở-và-đóng cùng lúc (0 giờ)

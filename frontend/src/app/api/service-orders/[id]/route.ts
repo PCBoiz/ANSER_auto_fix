@@ -9,7 +9,7 @@ import {
 } from "@/server/domain";
 import { notifyOrderStatusChanged } from "@/server/n8n";
 import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
-import { requireManager, requireUser } from "@/server/session";
+import { requireUser } from "@/server/session";
 import { getServiceOrderById, updateServiceOrder } from "@/server/store/serviceOrders";
 import { optionalDate, optionalText, optionalUuid, parseBody, vndAmount } from "@/server/validation";
 
@@ -97,7 +97,8 @@ export async function PATCH(request: Request, { params }: Params) {
 
     // Duyệt giảm giá: ghi SỐ TIỀN được duyệt. Quản lý tự đặt giảm giá = duyệt luôn mức đó;
     // nhân viên đặt thì số đã duyệt cũ (nếu có) không còn khớp -> chuông báo chờ duyệt.
-    const isManager = Boolean(await requireManager());
+    // Cùng ngưỡng với requireRole("manager") (admin > manager > staff), lấy từ user đã tải.
+    const isManager = user.role === "manager" || user.role === "admin";
     if (body.approveDiscount) {
       if (!isManager) return forbidden("Chỉ quản lý mới duyệt được giảm giá.");
     }

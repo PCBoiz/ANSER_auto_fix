@@ -19,6 +19,7 @@
 | Biết dòng upsert là thêm mới hay cập nhật | — | `returning (xmax = 0)`: đúng chỉ với dòng vừa INSERT | `syncIncidents` |
 | Khoá thông báo kèm ngày (`…:2026-09-18`) | Sửa xong vẫn còn thông báo hôm nay; chưa sửa thì mỗi ngày thêm một bản | Khoá **không** ngày, có vòng đời mở/đóng | `ARCHITECTURE.md` §12 |
 | Mốc "lịch còn chạy" bị lịch nội bộ đẩy | n8n chết cả tuần mà bản tin vẫn trông đúng giờ | `last_scheduled_run_at` chỉ tính nguồn n8n | `automation/rules.ts` |
+| Danh sách loại sự cố viết cứng ở từng câu SQL | Thêm loại mới (`revenue`, `usage`) mà quên sửa `pruneNotifications` → sự cố mở quá 30 ngày bị dọn mất | Một hằng `INCIDENT_KINDS` dùng chung + test | `lib/opsLoop.ts` |
 | Danh sách bảng sao lưu viết cứng | Lệch schema (19/22) mà không ai biết | Một file JSON dùng chung + test khoá | `backupTables.json` |
 | Suy "lần đăng nhập cuối" từ `login_attempts` | Bảng đó XOÁ nhật ký khi đăng nhập thành công, nên lệnh điền ngược trong migration 0011 không điền được gì | Cột riêng `users.last_login_at`, ghi ngay trong route đăng nhập | `store/users.ts — touchLastLogin` |
 | `order by … desc` với cột có NULL | Postgres đặt NULL **lên đầu** khi DESC | Ở báo cáo tuần đó lại là điều muốn (tài khoản chưa từng đăng nhập nổi lên trên); chỗ khác nhớ `nulls last` | `buildOwnerWeekly` |
@@ -73,7 +74,7 @@
 
 ## 5. Cách kiểm chứng lại
 
-**Hằng ngày trước khi push:** `npm run check` (typecheck → lint → 211 test → build → quét bundle).
+**Hằng ngày trước khi push:** `npm run check` (typecheck → lint → 212 test → build → quét bundle).
 Không cần DB.
 
 **Test chỉ cho module thuần** (`src/lib/`, và các hàm tách khỏi chỗ chạm DB). Muốn test được thì

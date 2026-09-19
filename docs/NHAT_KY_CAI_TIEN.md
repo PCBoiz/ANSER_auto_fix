@@ -98,6 +98,25 @@ trình duyệt thật (sửa một chỗ vỡ bố cục của nút duyệt). M�
 nguyên. Báo cáo tuần dựng từ dữ liệu thật lộ ra 2 lỗi đã sửa: chưa nối ghi lần đăng nhập vào
 route; họ tên bị đảo thứ tự.
 
+## Đợt 6 — 20/09/2026: audit lại toàn bộ (`e4c131d..HEAD`)
+
+Rà tay theo 5 trục: phân quyền mọi route, tiêm SQL/XSS, đường đi dữ liệu của từng sự cố, chạy
+chồng, và trạng thái DB thật. Kết quả:
+
+| Phát hiện | Mức | Đã sửa |
+|---|---|---|
+| `pruneNotifications` chỉ giữ sự cố mở loại `readiness`/`watchdog` — sự cố **thất thoát** hay **mức sử dụng** mở quá 30 ngày sẽ bị dọn, rồi lượt sau mở lại như việc mới (mất mốc tồn đọng) | lỗi thật | Gom `INCIDENT_KINDS` về `lib/opsLoop.ts`, dùng chung cho prune, số liệu vòng lặp, báo cáo tuần; có test khoá |
+| Lịch 30 phút + người bấm "Kiểm tra lại ngay" chạy chồng trong cùng tiến trình → cả hai đọc "chưa báo" trước khi bên nào kịp đánh dấu → email báo nhanh gửi đôi | hiếm | `runWatchdog` gộp lượt chồng: lượt sau dùng kết quả lượt đang chạy |
+| PATCH lệnh gọi `requireManager()` = một truy vấn DB thừa mỗi lần sửa lệnh | hiệu năng | Suy từ `user.role` đã tải |
+| Tên bảng vào `sql.raw` trong sao lưu lấy từ JSON tĩnh, không kiểm tra | phòng xa | Chỉ nhận định danh `^[a-z][a-z0-9_]*$` |
+| Sự cố dòng 0đ trên lệnh **đã giao** (đã khoá) hướng dẫn "bỏ dòng và thêm lại" — không làm được | câu chữ | Chỉ đường lập hoá đơn (có xác nhận) |
+
+Đã xác nhận không có vấn đề: mọi route API có kiểm tra quyền/token (trừ đăng nhập, đăng xuất,
+`/api/health` — cố ý công khai, health chỉ trả trạng thái); không bí mật nào trong file đã
+commit; 12 mẫu n8n đều còn placeholder; mọi email dựng qua `escapeHtml`; DB thật không sót bản
+ghi thử, sequence nguyên (RO=2, HD=1), `npm run db:migrate` không còn gì để áp; `npm audit` mức
+high sạch. 212 test.
+
 ---
 
 ## Số liệu đã đo trên dữ liệu thật (đừng đo lại từ đầu)
@@ -116,7 +135,7 @@ route; họ tên bị đảo thứ tự.
 
 ## Trạng thái cuối (20/09/2026)
 
-- **211 test** (20/09), `npm run check` sạch. CI trên fork đỏ vì tài khoản GitHub bị khoá thanh toán,
+- **212 test** (20/09), `npm run check` sạch. CI trên fork đỏ vì tài khoản GitHub bị khoá thanh toán,
   không phải do code.
 - **Migration 0000–0011 đã áp vào DB thật.**
 - **Kiểm tra vận hành:** 5 việc chặn + 7 cảnh báo, đều là việc của người vận hành (xem

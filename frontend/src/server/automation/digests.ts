@@ -19,6 +19,7 @@ import {
 } from "@/server/domain";
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format";
 import { escapeHtml } from "@/lib/html";
+import { INCIDENT_KINDS } from "@/lib/opsLoop";
 import { accountStatus, weekWindows, withDelta } from "@/lib/usage";
 import { listUpcomingAppointments } from "@/server/store/appointments";
 import { listUnpaidInvoicesOlderThan } from "@/server/store/invoices";
@@ -542,10 +543,10 @@ export async function buildOwnerWeekly(options: { companyName: string; now?: Dat
       customersPrev: sql<number>`(select count(*) from ${customers} where ${between(customers.createdAt, prev)})::int`,
       apptNow: sql<number>`(select count(*) from ${appointments} where ${between(appointments.scheduledAt, cur)})::int`,
       apptNoShowNow: sql<number>`(select count(*) from ${appointments} where ${between(appointments.scheduledAt, cur)} and ${appointments.status} = 'no_show')::int`,
-      loopOpened: sql<number>`(select count(*) from ${notifications} where ${notifications.kind} in ('watchdog','revenue','usage','readiness') and ${between(notifications.createdAt, cur)})::int`,
+      loopOpened: sql<number>`(select count(*) from ${notifications} where ${notifications.kind} in ${[...INCIDENT_KINDS]} and ${between(notifications.createdAt, cur)})::int`,
       loopVerified: sql<number>`(select count(*) from ${notifications} where ${notifications.resolution} = 'verified' and ${between(notifications.resolvedAt, cur)})::int`,
       loopAuto: sql<number>`(select count(*) from ${notifications} where ${notifications.resolution} = 'auto' and ${between(notifications.resolvedAt, cur)})::int`,
-      loopOpenNow: sql<number>`(select count(*) from ${notifications} where ${notifications.kind} in ('watchdog','revenue','usage','readiness') and ${notifications.resolvedAt} is null)::int`,
+      loopOpenNow: sql<number>`(select count(*) from ${notifications} where ${notifications.kind} in ${[...INCIDENT_KINDS]} and ${notifications.resolvedAt} is null)::int`,
     })
     .from(sql`(select 1) as _`);
 

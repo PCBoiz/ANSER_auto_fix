@@ -6,6 +6,13 @@
 //      còn, cái nào đã hết (tự khép)?
 //   2. Một quy tắc tự động im lặng bao lâu thì coi là lịch của nó đã chết?
 
+/**
+ * Các `kind` là SỰ CỐ có vòng đời (mở → đo lại → đóng), khác thông báo bản tin (chỉ có ngày).
+ * Dùng chung cho: không bao giờ xoá khi đang mở, đếm "đang mở" ở trang Kiểm tra vận hành và
+ * báo cáo tuần. Thêm loại sự cố mới thì thêm vào đây, không sửa từng câu SQL.
+ */
+export const INCIDENT_KINDS = ["readiness", "watchdog", "revenue", "usage"] as const;
+
 export type IncidentInput = {
   /** Khoá ổn định, KHÔNG kèm ngày: một sự cố = một bản ghi dù kéo dài bao lâu. */
   key: string;

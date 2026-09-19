@@ -3,6 +3,7 @@ import {
   dueScheduledJobs,
   findSilentRules,
   formatDuration,
+  INCIDENT_KINDS,
   n8nIncidents,
   n8nWatchdogSilence,
   overallHealth,
@@ -206,6 +207,12 @@ describe("n8nWatchdogSilence — canh người canh gác", () => {
     const hit = n8nWatchdogSilence(minutesAgo(125), now);
     expect(hit?.severity).toBe("high");
     expect(hit?.body).toContain("2 giờ");
+  });
+});
+
+describe("INCIDENT_KINDS — mọi loại sự cố có vòng đời đều được liệt kê", () => {
+  it("bao gồm cả thất thoát và mức sử dụng (không chỉ readiness/watchdog) — nếu thiếu, sự cố mở quá 30 ngày sẽ bị dọn mất", () => {
+    expect([...INCIDENT_KINDS]).toEqual(expect.arrayContaining(["readiness", "watchdog", "revenue", "usage"]));
   });
 });
 
