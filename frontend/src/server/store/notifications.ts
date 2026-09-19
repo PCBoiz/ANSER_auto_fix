@@ -142,6 +142,9 @@ export async function syncIncidents(
           createdAt: sql`case when ${notifications.resolvedAt} is not null then now() else ${notifications.createdAt} end`,
           resolvedAt: sql`null`,
           resolution: sql`null`,
+          // Tái phát là chuyện mới — email báo nhanh phải báo lại (automation/incidentAlerts).
+          alertedAt: sql`case when ${notifications.resolvedAt} is not null then null else ${notifications.alertedAt} end`,
+          resolveAlertedAt: sql`case when ${notifications.resolvedAt} is not null then null else ${notifications.resolveAlertedAt} end`,
         },
       })
       // `xmax = 0` chỉ đúng với dòng vừa INSERT (không phải UPDATE) — cách Postgres cho biết

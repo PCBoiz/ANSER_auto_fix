@@ -64,6 +64,7 @@ export const EXPECTED_MAX_SILENCE_MS: Record<string, number | null> = {
   revenue_report: 26 * HOUR, // 20h hằng ngày
   morning_brief: 26 * HOUR, // 7h hằng ngày
   accounting_digest: 8 * 24 * HOUR, // 8h thứ Hai
+  owner_weekly_report: 8 * 24 * HOUR, // 8h thứ Hai
   order_status_update: null, // gửi khi lệnh đổi trạng thái — không có lịch
 };
 
@@ -116,7 +117,7 @@ export function formatDuration(ms: number): string {
 // Lịch nội bộ — việc nào đến hạn
 // ---------------------------------------------------------------------------
 
-export type ScheduledJob = "watchdog" | "morning_brief" | "accounting_digest" | "backup";
+export type ScheduledJob = "watchdog" | "morning_brief" | "accounting_digest" | "owner_weekly_report" | "backup";
 
 // Việt Nam không có giờ mùa hè — cộng cứng 7 giờ là đúng quanh năm, và giữ hàm này thuần
 // (không phụ thuộc múi giờ của máy chủ, vốn là UTC trên Vercel/Docker).
@@ -146,7 +147,10 @@ export function dueScheduledJobs(now: Date): Array<{ job: ScheduledJob; slot: st
   // Sao lưu 2h sáng: xưởng nghỉ, không ai đang ghi dở một lệnh sửa chữa giữa chừng.
   if (hour >= 2) due.push({ job: "backup", slot: day });
   if (hour >= 7) due.push({ job: "morning_brief", slot: day });
-  if (weekday > 0 || hour >= 8) due.push({ job: "accounting_digest", slot: monday });
+  if (weekday > 0 || hour >= 8) {
+    due.push({ job: "accounting_digest", slot: monday });
+    due.push({ job: "owner_weekly_report", slot: monday });
+  }
   return due;
 }
 
@@ -364,5 +368,22 @@ export function n8nWatchdogSilence(lastSeen: Date | null, now: Date): IncidentIn
     body: `Lần cuối n8n hỏi /api/health cách đây ${formatDuration(silent)}. Nếu app chết lúc này sẽ không ai nhận được email. Kiểm tra workflow còn Active và lịch sử chạy trong n8n, hoặc bấm “Đồng bộ workflow”.`,
     href: "/dashboard/automation",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Canh gác từ BÊN NGOÀI (dead man's switch)
+// ---------------------------------------------------------------------------
+
+/**
+ * Địa chỉ gửi nhịp theo quy ước healthchecks.io (Uptime Kuma, Cronitor… có kiểu tương tự):
+ * `…/<uuid>` = còn sống và ổn; `…/<uuid>/fail` = còn sống nhưng đang hỏng.
+ *
+ * Vì sao cần: app và n8n canh nhau, nhưng thường chạy trên CÙNG một máy. Mất điện, mất mạng,
+ * máy treo thì cả hai cùng im — không ai gửi được email báo mình đã chết. Dịch vụ bên ngoài
+ * làm ngược lại: nó không hỏi, nó ĐỢI; quá hạn không nhận được nhịp thì chính nó gửi email.
+ */
+export function heartbeatPingUrl(base: string, status: HealthStatus): string {
+  const clean = base.trim().replace(/\/+$/, "");
+  return status === "ok" ? clean : `${clean}/fail`;
 }
 

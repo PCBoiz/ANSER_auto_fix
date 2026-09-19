@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     { "path": "/api/cron/automation?job=morning_brief&job=watchdog", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/automation?job=accounting_digest", "schedule": "0 1 * * 1" }
+    { "path": "/api/cron/automation?job=accounting_digest&job=owner_weekly_report", "schedule": "0 1 * * 1" }
   ]
 }

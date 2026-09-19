@@ -113,6 +113,7 @@ describe("dueScheduledJobs — lịch nội bộ, có bắt kịp", () => {
     // 21/09/2026 là thứ Hai.
     expect(find("2026-09-21T00:59:00Z", "accounting_digest")).toBeUndefined();
     expect(find("2026-09-21T01:00:00Z", "accounting_digest")?.slot).toBe("2026-09-21");
+    expect(find("2026-09-21T01:00:00Z", "owner_weekly_report")?.slot).toBe("2026-09-21");
     expect(find("2026-09-23T10:00:00Z", "accounting_digest")?.slot).toBe("2026-09-21");
     // Chủ nhật 27/09 23h VN vẫn thuộc tuần của thứ Hai 21/09.
     expect(find("2026-09-27T16:00:00Z", "accounting_digest")?.slot).toBe("2026-09-21");

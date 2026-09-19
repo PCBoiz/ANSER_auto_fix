@@ -59,6 +59,9 @@ export type BackupState = {
   tables?: number;
   bytes?: number;
   error?: string;
+  /** Có BACKUP_COPY_DIR: đã chép sang thư mục ngoài (và đọc lại khớp) chưa. */
+  copied?: boolean;
+  copyError?: string;
 };
 
 /** Lịch sao lưu mỗi ngày; nới 12 giờ cho máy tắt qua đêm rồi bắt kịp buổi sáng. */
@@ -82,6 +85,15 @@ export function backupIncidents(
       severity: "high",
       title: "Lần sao lưu gần nhất bị lỗi",
       body: `${input.last.error ?? "Không rõ lỗi"}. Kiểm tra dung lượng đĩa và quyền ghi của thư mục BACKUP_DIR; sự cố tự đóng khi lần sao lưu sau thành công.`,
+      href: "/dashboard/readiness",
+    });
+  }
+  if (input.last && input.last.ok && input.last.copied === false) {
+    out.push({
+      key: "watchdog:backup:copy-failed",
+      severity: "high",
+      title: "Không chép được bản sao lưu ra thư mục ngoài",
+      body: `${input.last.copyError ?? "Không rõ lỗi"}. Bản sao vẫn có trên máy chủ nhưng mất máy là mất cả hai. Kiểm tra BACKUP_COPY_DIR (ổ đồng bộ Google Drive/OneDrive có đang gắn không).`,
       href: "/dashboard/readiness",
     });
   }

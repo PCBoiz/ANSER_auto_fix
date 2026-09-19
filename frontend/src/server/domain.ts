@@ -152,6 +152,7 @@ export const AUTOMATION_RULE_TYPES = [
   "revenue_report", // báo cáo doanh thu định kỳ
   "morning_brief", // bản tin sáng gộp mọi việc cần xử lý trong ngày — thay cho 4 email rời
   "accounting_digest", // tổng hợp tuần cho kế toán: hoá đơn mua chưa nhận, hàng đã xuất chưa lập HĐ
+  "owner_weekly_report", // báo cáo tuần cho chủ gara: app có thật sự được dùng không (lệnh, doanh thu, ai dùng)
 ] as const;
 export type AutomationRuleType = (typeof AUTOMATION_RULE_TYPES)[number];
 
@@ -165,6 +166,7 @@ export const AUTOMATION_RULE_LABELS: Record<AutomationRuleType, string> = {
   revenue_report: "Báo cáo doanh thu định kỳ",
   morning_brief: "Bản tin sáng cho quản lý xưởng",
   accounting_digest: "Tổng hợp tuần cho kế toán",
+  owner_weekly_report: "Báo cáo tuần cho chủ gara",
 };
 
 // Ngưỡng tồn kho mặc định khi phụ tùng không đặt `minStock` riêng.

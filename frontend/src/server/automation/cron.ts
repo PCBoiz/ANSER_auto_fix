@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { buildAccountingDigest, buildMorningBrief, type Digest } from "@/server/automation/digests";
+import { buildAccountingDigest, buildMorningBrief, buildOwnerWeekly, type Digest } from "@/server/automation/digests";
 import { recordRuleRun, type RunSource } from "@/server/automation/rules";
 import { db } from "@/server/db/client";
 import { automationRules } from "@/server/db/schema";
@@ -25,7 +25,14 @@ import { getCompanySettings } from "@/server/store/settings";
 // Hôm 17/09/2026 Docker không chạy, nghĩa là không cảnh báo nào tới được ai. Với cron nội
 // bộ, ít nhất người mở app vẫn thấy việc cần làm.
 
-export const CRON_JOBS = ["morning_brief", "accounting_digest", "readiness", "watchdog", "backup"] as const;
+export const CRON_JOBS = [
+  "morning_brief",
+  "accounting_digest",
+  "owner_weekly_report",
+  "readiness",
+  "watchdog",
+  "backup",
+] as const;
 export type CronJob = (typeof CRON_JOBS)[number];
 
 export type CronJobResult = {
@@ -130,6 +137,33 @@ async function runReadiness(): Promise<CronJobResult> {
   };
 }
 
+// Báo cáo tuần: MỘT thông báo trên chuông (không tách từng mục như bản tin sáng) — đây là
+// bản tổng kết để đọc, không phải danh sách việc. Chi tiết nằm trong email.
+async function runOwnerWeekly(source: RunSource): Promise<CronJobResult> {
+  const [company, { enabled }] = await Promise.all([getCompanySettings(), loadRule("owner_weekly_report")]);
+  if (!enabled) {
+    return { job: "owner_weekly_report", status: "skipped", created: 0, summary: "Quy tắc đang tắt" };
+  }
+  const digest = await buildOwnerWeekly({ companyName: company.name });
+  const key = `owner_weekly:${garageDay(digest.generatedAt)}`;
+  const activity = digest.sections.find((s) => s.key === "activity");
+  const created = await createNotifications([
+    {
+      kind: "owner_weekly",
+      severity: "normal",
+      audience: "manager",
+      title: digest.subject,
+      body: digest.sections.map((s) => s.headline).join(" "),
+      href: activity?.href ?? "/dashboard/reports",
+      dedupeKey: key,
+    },
+  ]);
+  await supersedeDatedNotifications("owner_weekly", [key]);
+  const summary = `${digest.subject} — tạo ${created} thông báo mới`;
+  await recordRuleRun("owner_weekly_report", { status: "ok", summary, source });
+  return { job: "owner_weekly_report", status: "ok", created, summary };
+}
+
 async function runWatchdogJob(source: RunSource): Promise<CronJobResult> {
   const r = await runWatchdog(source);
   return { job: "watchdog", status: r.status, created: r.opened, summary: r.summary };
@@ -145,6 +179,7 @@ export async function runCronJobs(jobs: CronJob[], source: RunSource = "cron"): 
     try {
       if (job === "morning_brief") results.push(await runMorningBrief(source));
       else if (job === "accounting_digest") results.push(await runAccountingDigest(source));
+      else if (job === "owner_weekly_report") results.push(await runOwnerWeekly(source));
       else if (job === "readiness") results.push(await runReadiness());
       else if (job === "watchdog") results.push(await runWatchdogJob(source));
       else if (job === "backup") {
@@ -154,7 +189,7 @@ export async function runCronJobs(jobs: CronJob[], source: RunSource = "cron"): 
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`[cron] Việc "${job}" lỗi:`, error);
-      if (job === "morning_brief" || job === "accounting_digest") {
+      if (job === "morning_brief" || job === "accounting_digest" || job === "owner_weekly_report") {
         await recordRuleRun(job, { status: "error", summary: message, source });
       }
       results.push({ job, status: "error", created: 0, summary: message });

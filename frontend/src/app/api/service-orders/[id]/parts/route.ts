@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { conflict, handle, notFound, unauthorized } from "@/server/api";
+import { lineWarning } from "@/lib/revenueGuard";
 import { requireUser } from "@/server/session";
+import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
 import { InsufficientStockError } from "@/server/store/parts";
 import { addPart, CrossBranchError, OrderLockedError, OrderNotFoundError } from "@/server/store/serviceOrders";
 import { parseBody, positiveQuantity, uuidField, vndAmount } from "@/server/validation";
@@ -27,7 +29,17 @@ export async function POST(request: Request, { params }: Params) {
 
     try {
       const line = await addPart(id, parsed.data);
-      return NextResponse.json({ line }, { status: 201 });
+      // Cho thêm dòng 0đ / dưới giá vốn (không làm kẹt xưởng), nhưng nói ngay trên màn hình
+      // và đưa lên chuông của quản lý — xem lib/revenueGuard.ts.
+      const warning = lineWarning({
+        kind: "part",
+        name: line.name,
+        unitPrice: line.unitPrice,
+        unitCost: line.unitCost,
+        quantity: line.quantity,
+      });
+      after(syncRevenueIncidentsSafe);
+      return NextResponse.json({ line, warning }, { status: 201 });
     } catch (error) {
       if (error instanceof InsufficientStockError) return conflict(error.message);
       if (error instanceof CrossBranchError) return conflict(error.message);

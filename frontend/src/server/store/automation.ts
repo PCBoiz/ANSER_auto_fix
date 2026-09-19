@@ -84,4 +84,5 @@ export const WORKFLOW_NAMES: Record<AutomationRuleType, string> = {
   revenue_report: "ANSER Auto — Báo cáo doanh thu ngày",
   morning_brief: "ANSER Auto — Bản tin sáng cho quản lý xưởng",
   accounting_digest: "ANSER Auto — Tổng hợp tuần cho kế toán",
+  owner_weekly_report: "ANSER Auto — Báo cáo tuần cho chủ gara",
 };

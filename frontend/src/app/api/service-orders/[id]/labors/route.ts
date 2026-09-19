@@ -1,7 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequest, conflict, handle, notFound, unauthorized } from "@/server/api";
+import { lineWarning } from "@/lib/revenueGuard";
 import { requireUser } from "@/server/session";
+import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
 import { getServiceById } from "@/server/store/services";
 import { addLabor, OrderLockedError, OrderNotFoundError } from "@/server/store/serviceOrders";
 import {
@@ -66,7 +68,9 @@ export async function POST(request: Request, { params }: Params) {
         standardMinutes,
         note: body.note,
       });
-      return NextResponse.json({ labor }, { status: 201 });
+      const warning = lineWarning({ kind: "labor", name, unitPrice, unitCost: null, quantity: body.quantity });
+      after(syncRevenueIncidentsSafe);
+      return NextResponse.json({ labor, warning }, { status: 201 });
     } catch (error) {
       if (error instanceof OrderLockedError) return conflict(error.message);
       if (error instanceof OrderNotFoundError) return notFound(error.message);

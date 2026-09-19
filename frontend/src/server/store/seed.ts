@@ -135,6 +135,9 @@ async function seedNewAutomationRules() {
     { name: "Bản tin sáng cho quản lý xưởng", type: "morning_brief", thresholdDays: 2, thresholdQty: 10 },
     // Tổng hợp kế toán: ngưỡng ngày = hoá đơn mua hàng "chưa nhận" bao lâu thì coi là quá hạn.
     { name: "Tổng hợp tuần cho kế toán", type: "accounting_digest", thresholdDays: 15 },
+    // Bổ sung 20/09/2026. Ngưỡng ngày = bao nhiêu ngày làm việc liền không có lệnh mới thì báo
+    // "xưởng ngừng lập lệnh" (lib/usage.ts). Email chỉ gửi nội bộ cho chủ gara.
+    { name: "Báo cáo tuần cho chủ gara", type: "owner_weekly_report", thresholdDays: 2 },
   ];
 
   const existingTypes = new Set(

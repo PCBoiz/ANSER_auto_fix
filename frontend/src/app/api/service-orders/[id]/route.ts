@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { badRequest, conflict, handle, notFound, unauthorized } from "@/server/api";
+import { badRequest, conflict, forbidden, handle, notFound, unauthorized } from "@/server/api";
 import {
   REVERTIBLE_FROM,
   SERVICE_ORDER_STATUS_LABELS,
@@ -8,7 +8,8 @@ import {
   type ServiceOrderStatus,
 } from "@/server/domain";
 import { notifyOrderStatusChanged } from "@/server/n8n";
-import { requireUser } from "@/server/session";
+import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
+import { requireManager, requireUser } from "@/server/session";
 import { getServiceOrderById, updateServiceOrder } from "@/server/store/serviceOrders";
 import { optionalDate, optionalText, optionalUuid, parseBody, vndAmount } from "@/server/validation";
 
@@ -58,11 +59,14 @@ const patchSchema = z.object({
   note: optionalText(2000).optional(),
   promisedAt: optionalDate.optional(),
   discount: vndAmount.optional(),
+  // Quản lý duyệt MỨC GIẢM HIỆN TẠI (xem lib/revenueGuard.ts — needsDiscountApproval).
+  approveDiscount: z.literal(true).optional(),
 });
 
 export async function PATCH(request: Request, { params }: Params) {
   return handle(async () => {
-    if (!(await requireUser())) return unauthorized();
+    const user = await requireUser();
+    if (!user) return unauthorized();
     const { id } = await params;
 
     const parsed = await parseBody(request, patchSchema);
@@ -91,6 +95,18 @@ export async function PATCH(request: Request, { params }: Params) {
     if (body.promisedAt !== undefined) patch.promisedAt = body.promisedAt;
     if (body.discount !== undefined) patch.discount = body.discount;
 
+    // Duyệt giảm giá: ghi SỐ TIỀN được duyệt. Quản lý tự đặt giảm giá = duyệt luôn mức đó;
+    // nhân viên đặt thì số đã duyệt cũ (nếu có) không còn khớp -> chuông báo chờ duyệt.
+    const isManager = Boolean(await requireManager());
+    if (body.approveDiscount) {
+      if (!isManager) return forbidden("Chỉ quản lý mới duyệt được giảm giá.");
+    }
+    if (body.approveDiscount || (body.discount !== undefined && isManager)) {
+      patch.discountApprovedAmount = body.discount ?? before.order.discount;
+      patch.discountApprovedBy = user.id;
+      patch.discountApprovedAt = new Date();
+    }
+
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     const order = await updateServiceOrder(id, patch);
@@ -116,6 +132,9 @@ export async function PATCH(request: Request, { params }: Params) {
       });
     }
 
+    // Giảm giá, trạng thái (giao xe) đều ảnh hưởng bộ chặn thất thoát — đồng bộ chuông sau
+    // khi đã trả lời người dùng.
+    after(syncRevenueIncidentsSafe);
     return NextResponse.json({ order });
   });
 }

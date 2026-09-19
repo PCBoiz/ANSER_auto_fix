@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { conflict, handle, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
+import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
 import { PAYMENT_METHODS } from "@/server/domain";
 import { optionalText, parseBody, uuidField, vndAmount } from "@/server/validation";
 import {
@@ -10,6 +11,7 @@ import {
   listInvoiceableOrders,
   listInvoices,
   OrderNotReadyError,
+  ZeroPriceLinesError,
 } from "@/server/store/invoices";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,8 @@ const createSchema = z.object({
   insuranceAmount: vndAmount.default(0),
   insuranceProvider: optionalText(200),
   note: optionalText(2000),
+  // Lệnh còn dòng 0đ thì phải xác nhận mới lập được hoá đơn (xem createInvoice).
+  confirmZeroPrice: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -52,9 +56,19 @@ export async function POST(request: Request) {
     if (!parsed.ok) return parsed.response;
 
     try {
-      const invoice = await createInvoice(parsed.data);
+      const { confirmZeroPrice, ...input } = parsed.data;
+      const invoice = await createInvoice(input, { confirmZeroPrice: confirmZeroPrice === true });
+      after(syncRevenueIncidentsSafe);
       return NextResponse.json({ invoice }, { status: 201 });
     } catch (error) {
+      if (error instanceof ZeroPriceLinesError) {
+        // 409 kèm `code` + danh sách dòng: giao diện hỏi lại người dùng rồi gửi kèm
+        // `confirmZeroPrice: true`. Không chặn hẳn — có dòng 0đ là có chủ đích (bảo hành, tặng).
+        return NextResponse.json(
+          { message: error.message, code: "ZERO_PRICE_LINES", lines: error.lines },
+          { status: 409 },
+        );
+      }
       if (error instanceof InvoiceExistsError) return conflict(error.message);
       if (error instanceof OrderNotReadyError) return conflict(error.message);
       throw error;

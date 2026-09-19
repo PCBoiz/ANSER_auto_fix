@@ -143,12 +143,20 @@ function InvoicesContent() {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch("/api/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json().catch(() => null);
+      const post = (confirmZeroPrice: boolean) =>
+        fetch("/api/invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...form, confirmZeroPrice }),
+        });
+      let res = await post(false);
+      let data = await res.json().catch(() => null);
+      // Lệnh còn dòng 0đ: hỏi lại một lần — hoá đơn là chỗ chốt tiền, sau đó không sửa được.
+      if (res.status === 409 && data?.code === "ZERO_PRICE_LINES") {
+        if (!window.confirm(`${data.message}\n\nVẫn xuất hoá đơn?`)) return;
+        res = await post(true);
+        data = await res.json().catch(() => null);
+      }
       if (!res.ok) throw new Error(data?.message ?? "Không xuất được hoá đơn.");
       setCreating(false);
       await load(search, statusFilter);

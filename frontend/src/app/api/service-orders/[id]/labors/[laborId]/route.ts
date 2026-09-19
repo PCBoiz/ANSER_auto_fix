@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { badRequest, conflict, handle, unauthorized } from "@/server/api";
 import { LABOR_STATUSES } from "@/server/domain";
 import { requireUser } from "@/server/session";
+import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
 import { OrderLockedError, removeLabor, updateLabor } from "@/server/store/serviceOrders";
 import {
   optionalNonNegativeInt,
@@ -48,7 +49,9 @@ export async function PATCH(request: Request, { params }: Params) {
     if (Object.keys(patch).length === 0) return badRequest("Không có thay đổi nào.");
 
     try {
-      return NextResponse.json({ labor: await updateLabor(laborId, patch) });
+      const labor = await updateLabor(laborId, patch);
+      after(syncRevenueIncidentsSafe);
+      return NextResponse.json({ labor });
     } catch (error) {
       if (error instanceof OrderLockedError) return conflict(error.message);
       throw error;
@@ -62,6 +65,7 @@ export async function DELETE(_request: Request, { params }: Params) {
     const { laborId } = await params;
     try {
       await removeLabor(laborId);
+      after(syncRevenueIncidentsSafe);
       return new NextResponse(null, { status: 204 });
     } catch (error) {
       if (error instanceof OrderLockedError) return conflict(error.message);

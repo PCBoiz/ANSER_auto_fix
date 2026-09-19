@@ -24,6 +24,7 @@ const TYPE_LABELS: Record<string, string> = {
   revenue_report: "Báo cáo doanh thu định kỳ",
   morning_brief: "Bản tin sáng cho quản lý xưởng",
   accounting_digest: "Tổng hợp tuần cho kế toán",
+  owner_weekly_report: "Báo cáo tuần cho chủ gara",
 };
 
 const TYPE_DESCRIPTIONS: Record<string, string> = {
@@ -40,6 +41,8 @@ const TYPE_DESCRIPTIONS: Record<string, string> = {
     "7h mỗi ngày, MỘT bản tin gộp xe quá hẹn trả, xe chờ nghiệm thu, đặt hàng ngoài về trễ, lịch hẹn, phụ tùng sắp hết và công nợ. Lên chuông thông báo ngay cả khi n8n không chạy.",
   accounting_digest:
     "8h thứ Hai, gửi kế toán: hoá đơn mua hàng chưa nhận theo nhà cung cấp, hàng đã giao chưa lập hoá đơn, và khách bị ghi nhiều tên. Lên chuông thông báo ngay cả khi n8n không chạy.",
+  owner_weekly_report:
+    "8h thứ Hai, gửi chủ gara: lệnh, xe giao, doanh thu tuần này so tuần trước; ai đang dùng app, ai chưa từng đăng nhập; thất thoát đang mở. Ngưỡng ngày = bao nhiêu ngày làm việc không có lệnh mới thì báo lên chuông.",
 };
 
 type SyncAction = "created" | "updated" | "unchanged" | "drift-skipped" | "error";
@@ -64,7 +67,7 @@ const SYNC_TONES: Record<SyncAction, "emerald" | "sky" | "zinc" | "orange" | "re
 };
 
 // Quy tắc có bộ lập lịch NỘI BỘ (chạy trong app, không cần n8n) — có nút "Chạy ngay".
-const IN_APP_JOBS = new Set(["morning_brief", "accounting_digest"]);
+const IN_APP_JOBS = new Set(["morning_brief", "accounting_digest", "owner_weekly_report"]);
 
 const SOURCE_LABELS: Record<string, string> = {
   schedule: "n8n theo lịch",

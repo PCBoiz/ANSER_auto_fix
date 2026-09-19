@@ -240,6 +240,15 @@ export async function listInvoiceableOrders() {
     .orderBy(desc(serviceOrders.receivedAt));
 }
 
+/** Lệnh còn dòng 0đ mà người lập hoá đơn chưa xác nhận — xem lib/revenueGuard.ts. */
+export class ZeroPriceLinesError extends Error {
+  constructor(public readonly lines: string[]) {
+    super(
+      `Lệnh còn ${lines.length} dòng 0đ (${lines.slice(0, 3).join("; ")}${lines.length > 3 ? "…" : ""}) — khách sẽ không bị tính tiền các dòng này. Xác nhận nếu đó là chủ đích (bảo hành, tặng).`,
+    );
+  }
+}
+
 export async function createInvoice(input: {
   serviceOrderId: string;
   taxRate?: number;
@@ -248,7 +257,7 @@ export async function createInvoice(input: {
   insuranceAmount?: number;
   insuranceProvider?: string | null;
   note?: string | null;
-}) {
+}, options: { confirmZeroPrice?: boolean } = {}) {
   const [order] = await db
     .select()
     .from(serviceOrders)
@@ -256,6 +265,23 @@ export async function createInvoice(input: {
     .limit(1);
   if (!order) throw new Error("Không tìm thấy lệnh sửa chữa.");
   if (order.status !== "completed" && order.status !== "delivered") throw new OrderNotReadyError();
+
+  // Hoá đơn là chỗ CHỐT tiền: sau bước này dòng 0đ không sửa được nữa. Nên đây là chỗ duy
+  // nhất bắt xác nhận (thêm dòng 0đ vào lệnh thì chỉ cảnh báo, không chặn).
+  if (!options.confirmZeroPrice) {
+    const [partZero, laborZero] = await Promise.all([
+      db
+        .select({ name: serviceOrderParts.name })
+        .from(serviceOrderParts)
+        .where(and(eq(serviceOrderParts.serviceOrderId, order.id), eq(serviceOrderParts.unitPrice, 0))),
+      db
+        .select({ name: serviceOrderLabors.name })
+        .from(serviceOrderLabors)
+        .where(and(eq(serviceOrderLabors.serviceOrderId, order.id), eq(serviceOrderLabors.unitPrice, 0))),
+    ]);
+    const zero = [...partZero, ...laborZero].map((l) => l.name);
+    if (zero.length > 0) throw new ZeroPriceLinesError(zero);
+  }
 
   const existing = await getInvoiceByOrderId(input.serviceOrderId);
   if (existing) throw new InvoiceExistsError(existing.code);

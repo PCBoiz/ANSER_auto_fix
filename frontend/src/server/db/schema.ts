@@ -105,6 +105,9 @@ export const users = pgTable(
     // Một cột thay cho bảng nối users×notifications: gara có vài tài khoản, và "đã xem tới
     // đâu" là đủ — không ai cần đánh dấu đọc từng thông báo một.
     notificationsSeenAt: timestamp("notifications_seen_at", { withTimezone: true }),
+    // Lần đăng nhập thành công gần nhất — nền của "theo dõi mức sử dụng": tài khoản cấp ra mà
+    // chưa từng đăng nhập, hay đã bỏ dùng 2 tuần, là dấu hiệu app không được dùng thật.
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("users_employee_id_idx").on(table.employeeId)],
@@ -343,6 +346,12 @@ export const serviceOrders = pgTable("service_orders", {
   partsTotal: integer("parts_total").notNull().default(0),
   discount: integer("discount").notNull().default(0),
   total: integer("total").notNull().default(0),
+  // Duyệt giảm giá (lib/revenueGuard.ts): giảm giá lớn do nhân viên đặt cần quản lý duyệt. Lưu
+  // SỐ TIỀN đã duyệt, không phải cờ đúng/sai: duyệt 500.000đ rồi ai đó sửa thành 2.000.000đ thì
+  // lần duyệt cũ không còn giá trị — so số tiền là tự biết.
+  discountApprovedAmount: integer("discount_approved_amount"),
+  discountApprovedBy: uuid("discount_approved_by").references(() => users.id, { onDelete: "set null" }),
+  discountApprovedAt: timestamp("discount_approved_at", { withTimezone: true }),
 
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -701,6 +710,11 @@ export const notifications = pgTable(
     // "auto" = hệ thống tự sửa (vd đồng bộ lại workflow); "verified" = người sửa, bộ kiểm tra
     // xác nhận. Dùng cho số liệu "bao nhiêu việc tự khép".
     resolution: text("resolution"),
+    // Email báo nhanh (automation/incidentAlerts.ts): đã gửi email "sự cố mới" chưa, và đã gửi
+    // "đã khắc phục" chưa. Gửi lỗi (n8n tắt) thì cột vẫn null — lượt sau gửi lại, không mất.
+    // Mở lại (tái phát) thì cả hai về null: tái phát là chuyện mới, phải báo lại.
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+    resolveAlertedAt: timestamp("resolve_alerted_at", { withTimezone: true }),
   },
   (table) => [
     index("notifications_created_at_idx").on(table.createdAt),

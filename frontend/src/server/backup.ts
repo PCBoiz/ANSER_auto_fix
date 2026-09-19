@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { copyFile, mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { sql } from "drizzle-orm";
 import { backupFileName, filesToPrune, verifyBackup, type BackupState } from "@/lib/backupPolicy";
@@ -18,6 +19,35 @@ export const BACKUP_LAST_OK_KEY = "backup:lastOk";
 export function backupDir(): string | null {
   const dir = process.env.BACKUP_DIR?.trim();
   return dir ? resolve(dir) : null;
+}
+
+/**
+ * Thư mục THỨ HAI, nằm ngoài máy chủ về mặt vật lý: thư mục Google Drive for Desktop /
+ * OneDrive / Dropbox (chủ gara chọn 20/09/2026), ổ mạng, ổ USB. App chỉ ghi file vào đó —
+ * phần đưa lên mây là việc của phần mềm đồng bộ, nên không cần credential nào trong app.
+ */
+export function backupCopyDir(): string | null {
+  const dir = process.env.BACKUP_COPY_DIR?.trim();
+  return dir ? resolve(dir) : null;
+}
+
+const sha256 = (buf: Buffer) => createHash("sha256").update(buf).digest("hex");
+
+/** Chép, đọc lại so từng byte (sha256), rồi xoay vòng thư mục đích như thư mục chính. */
+async function copyOffsite(file: string, name: string, keep: number): Promise<{ copied: boolean; copyError?: string }> {
+  const dir = backupCopyDir();
+  if (!dir) return { copied: false, copyError: undefined };
+  try {
+    await mkdir(dir, { recursive: true });
+    const target = join(dir, name);
+    await copyFile(file, target);
+    const [a, b] = await Promise.all([readFile(file), readFile(target)]);
+    if (sha256(a) !== sha256(b)) throw new Error("Bản chép đọc lại không khớp bản gốc.");
+    for (const old of filesToPrune(await readdir(dir), keep)) await unlink(join(dir, old)).catch(() => {});
+    return { copied: true };
+  } catch (error) {
+    return { copied: false, copyError: (error instanceof Error ? error.message : String(error)).slice(0, 300) };
+  }
 }
 
 function backupKeep(): number {
@@ -105,11 +135,23 @@ export async function runBackup(source: BackupState["source"]): Promise<BackupRe
 
     const bytes = (await stat(file)).size;
     const rows = Object.values(counts).reduce((a, b) => a + b, 0);
-    await recordState({ at: startedAt.toISOString(), ok: true, source, file: name, rows, tables: plan.order.length, bytes });
-    return {
-      status: "ok",
-      summary: `Sao lưu ${rows} dòng / ${plan.order.length} bảng (${(bytes / 1024 / 1024).toFixed(2)} MB), đã đọc lại khớp${pruned.length ? `, xoá ${pruned.length} bản cũ` : ""}`,
-    };
+    const offsite = backupCopyDir() ? await copyOffsite(file, name, backupKeep()) : null;
+    await recordState({
+      at: startedAt.toISOString(),
+      ok: true,
+      source,
+      file: name,
+      rows,
+      tables: plan.order.length,
+      bytes,
+      ...(offsite ?? {}),
+    });
+    const base = `Sao lưu ${rows} dòng / ${plan.order.length} bảng (${(bytes / 1024 / 1024).toFixed(2)} MB), đã đọc lại khớp${pruned.length ? `, xoá ${pruned.length} bản cũ` : ""}`;
+    if (offsite && !offsite.copied) {
+      // Bản trên máy vẫn tốt, nhưng báo "error" để lịch/nhật ký thấy — mất máy là mất cả hai.
+      return { status: "error", summary: `${base}; CHÉP RA NGOÀI LỖI: ${offsite.copyError}` };
+    }
+    return { status: "ok", summary: `${base}${offsite ? ", đã chép ra thư mục ngoài" : ""}` };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await recordState({ at: startedAt.toISOString(), ok: false, source, error: message.slice(0, 300) }).catch(() => {});

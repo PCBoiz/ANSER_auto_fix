@@ -10,6 +10,14 @@ export type Role = (typeof ROLES)[number];
 // này qua trang Nhân sự (không tạo/thăng cấp lên admin được từ UI/API).
 export const ASSIGNABLE_ROLES = ["staff", "manager"] as const;
 
+/**
+ * Ghi mốc đăng nhập thành công — nền của báo cáo "ai đang dùng app" (lib/usage.ts). Không lấy
+ * từ `login_attempts`: bảng đó XOÁ nhật ký của email khi đăng nhập thành công (loginThrottle).
+ */
+export async function touchLastLogin(userId: string) {
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, userId));
+}
+
 export async function findUserByEmail(email: string): Promise<User | undefined> {
   const rows = await db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1);
   return rows[0];

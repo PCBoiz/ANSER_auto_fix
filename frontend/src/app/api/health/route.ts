@@ -1,11 +1,8 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { db } from "@/server/db/client";
-import { notifications } from "@/server/db/schema";
-import { overallHealth, watchdogCheck, type HealthCheck } from "@/lib/opsLoop";
-import { N8N_WATCHDOG_SEEN_KEY, WATCHDOG_TICK_KEY, type WatchdogTick } from "@/server/automation/watchdog";
+import { N8N_WATCHDOG_SEEN_KEY } from "@/server/automation/watchdog";
+import { computeHealth } from "@/server/health";
 import { INTERNAL_TOKEN_HEADER } from "@/server/internalAuth";
-import { getSystemState, setSystemState } from "@/server/store/systemState";
+import { setSystemState } from "@/server/store/systemState";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +17,8 @@ export const dynamic = "force-dynamic";
 //             hoặc chính bộ canh gác im lặng quá lâu) -> 503 để n8n báo
 //   down      DB không trả lời -> 503
 //
+// Phép đo nằm ở `server/health.ts`, dùng chung với nhịp gửi ra canh gác bên ngoài.
+//
 // Ai cũng gọi được (Docker healthcheck, uptime monitor) nhưng chỉ nhận trạng thái. Chi tiết
 // (tên sự cố, lỗi DB) chỉ trả khi có token nội bộ — không lộ tình trạng hệ thống cho người lạ.
 
@@ -27,18 +26,6 @@ function canSeeDetails(request: Request) {
   const expected = process.env.N8N_INTERNAL_TOKEN;
   if (!expected) return process.env.NODE_ENV !== "production";
   return request.headers.get(INTERNAL_TOKEN_HEADER) === expected;
-}
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`quá ${ms / 1000} giây không trả lời`)), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 export async function GET(request: Request) {
@@ -49,69 +36,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ status: "ok" });
   }
 
-  const now = new Date();
-  const checks: HealthCheck[] = [];
-
-  let dbOk = false;
-  try {
-    await withTimeout(db.execute(sql`select 1`), 8000);
-    dbOk = true;
-    checks.push({ name: "Cơ sở dữ liệu", ok: true, detail: "Kết nối được." });
-  } catch (error) {
-    checks.push({
-      name: "Cơ sở dữ liệu",
-      ok: false,
-      fatal: true,
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  if (dbOk) {
-    try {
-      const tick = await getSystemState<WatchdogTick>(WATCHDOG_TICK_KEY);
-      checks.push(watchdogCheck(tick ? new Date(tick.value.at) : null, now));
-
-      // Chỉ sự cố CANH GÁC mức cao (hồi quy: lịch chết, n8n không trả lời). Việc chặn go-live
-      // là việc cài đặt — nằm ở trang Kiểm tra vận hành, không làm app "hỏng".
-      const open = await db
-        .select({ title: notifications.title })
-        .from(notifications)
-        .where(
-          and(
-            eq(notifications.kind, "watchdog"),
-            eq(notifications.severity, "high"),
-            isNull(notifications.resolvedAt),
-          ),
-        )
-        .limit(10);
-      checks.push({
-        name: "Sự cố vòng tự động",
-        ok: open.length === 0,
-        detail: open.length === 0 ? "Không có sự cố nào đang mở." : open.map((o) => o.title).join("; "),
-      });
-    } catch (error) {
-      checks.push({
-        name: "Trạng thái canh gác",
-        ok: false,
-        detail: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  const status = overallHealth(checks);
+  const health = await computeHealth();
   const trusted = canSeeDetails(request);
 
   // Nhịp của workflow "Canh gác app" bên n8n: có token + gọi theo LỊCH (không phải bấm
   // Execute thử). Bộ canh gác trong app đọc mốc này để biết người canh gác còn canh không.
-  if (dbOk && trusted && request.headers.get("x-anser-trigger") === "schedule") {
-    await setSystemState(N8N_WATCHDOG_SEEN_KEY, { at: now.toISOString() }).catch(() => {});
+  if (health.dbOk && trusted && request.headers.get("x-anser-trigger") === "schedule") {
+    await setSystemState(N8N_WATCHDOG_SEEN_KEY, { at: health.checkedAt.toISOString() }).catch(() => {});
   }
 
   const body = trusted
-    ? { status, checkedAt: now.toISOString(), checks }
-    : { status };
+    ? { status: health.status, checkedAt: health.checkedAt.toISOString(), checks: health.checks }
+    : { status: health.status };
   return NextResponse.json(body, {
-    status: status === "ok" ? 200 : 503,
+    status: health.status === "ok" ? 200 : 503,
     headers: { "Cache-Control": "no-store" },
   });
 }

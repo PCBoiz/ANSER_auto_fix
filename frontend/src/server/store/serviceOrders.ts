@@ -381,6 +381,9 @@ export async function updateServiceOrder(
     note: string | null;
     completedAt: Date | null;
     deliveredAt: Date | null;
+    discountApprovedAmount: number | null;
+    discountApprovedBy: string | null;
+    discountApprovedAt: Date | null;
   }>,
 ) {
   return db.transaction(async (tx) => {

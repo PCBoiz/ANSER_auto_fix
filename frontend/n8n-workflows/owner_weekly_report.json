@@ -1,0 +1,267 @@
+{
+  "name": "ANSER Auto — Báo cáo tuần cho chủ gara",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "ow-trigger",
+      "name": "Thứ Hai 8h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/owner-weekly",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ow-fetch",
+      "name": "Lấy báo cáo tuần",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.send }}",
+              "value2": true
+            }
+          ],
+          "string": [
+            {
+              "value1": "={{ $json.email_to }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "ow-if",
+      "name": "Có nội dung và có người nhận?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@anser.auto",
+        "toEmail": "={{ $json.email_to }}",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "text": "={{ $json.text }}",
+        "options": {}
+      },
+      "id": "ow-email",
+      "name": "Gửi Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        860,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/heartbeat",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"owner_weekly_report\", \"status\": \"ok\"}",
+        "options": {}
+      },
+      "id": "ow-hb-ok",
+      "name": "Báo app: đã gửi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        140
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/heartbeat",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"owner_weekly_report\", \"status\": \"error\"}",
+        "options": {}
+      },
+      "id": "ow-hb-err",
+      "name": "Báo app: gửi lỗi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1100,
+        300
+      ],
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/n8n/internal/heartbeat",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Internal-Token",
+              "value": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "name": "X-Anser-Trigger",
+              "value": "={{ $execution.mode === 'production' ? 'schedule' : 'manual' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"type\": \"owner_weekly_report\", \"status\": \"skipped\"}",
+        "options": {}
+      },
+      "id": "ow-hb-skip",
+      "name": "Báo app: không có gì gửi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        860,
+        420
+      ],
+      "executeOnce": true
+    }
+  ],
+  "connections": {
+    "Thứ Hai 8h": {
+      "main": [
+        [
+          {
+            "node": "Lấy báo cáo tuần",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy báo cáo tuần": {
+      "main": [
+        [
+          {
+            "node": "Có nội dung và có người nhận?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Có nội dung và có người nhận?": {
+      "main": [
+        [
+          {
+            "node": "Gửi Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Báo app: không có gì gửi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi Email": {
+      "main": [
+        [
+          {
+            "node": "Báo app: đã gửi",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Báo app: gửi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

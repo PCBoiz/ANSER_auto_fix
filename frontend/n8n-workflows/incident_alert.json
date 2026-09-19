@@ -1,0 +1,170 @@
+{
+  "name": "ANSER Auto — Báo nhanh sự cố",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incident-alert",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ia-webhook",
+      "name": "Nhận cảnh báo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.headers['x-internal-token'] }}",
+              "operation": "equal",
+              "value2": "REPLACE_WITH_N8N_INTERNAL_TOKEN"
+            },
+            {
+              "value1": "={{ $json.body.to }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        },
+        "combineOperation": "all"
+      },
+      "id": "ia-if",
+      "name": "Đúng token và có người nhận?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "reports@anser.auto",
+        "toEmail": "={{ $json.body.to }}",
+        "subject": "={{ $json.body.subject }}",
+        "html": "={{ $json.body.html }}",
+        "text": "={{ $json.body.text }}",
+        "options": {}
+      },
+      "id": "ia-email",
+      "name": "Gửi Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        640,
+        220
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\": true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "ia-ok",
+      "name": "Trả lời: đã gửi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        880,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\": false, \"reason\": \"smtp\"}",
+        "options": {
+          "responseCode": 502
+        }
+      },
+      "id": "ia-fail",
+      "name": "Trả lời: gửi lỗi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\": false, \"reason\": \"token\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "ia-denied",
+      "name": "Trả lời: từ chối",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        420
+      ]
+    }
+  ],
+  "connections": {
+    "Nhận cảnh báo": {
+      "main": [
+        [
+          {
+            "node": "Đúng token và có người nhận?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Đúng token và có người nhận?": {
+      "main": [
+        [
+          {
+            "node": "Gửi Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời: từ chối",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi Email": {
+      "main": [
+        [
+          {
+            "node": "Trả lời: đã gửi",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trả lời: gửi lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

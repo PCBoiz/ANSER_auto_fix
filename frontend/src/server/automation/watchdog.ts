@@ -1,12 +1,17 @@
+import { sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
-import { automationRules } from "@/server/db/schema";
+import { automationRules, serviceOrders } from "@/server/db/schema";
 import { backupIncidents } from "@/lib/backupPolicy";
-import { findSilentRules, n8nIncidents, n8nWatchdogSilence, type IncidentInput } from "@/lib/opsLoop";
+import { findSilentRules, heartbeatPingUrl, n8nIncidents, n8nWatchdogSilence, type IncidentInput } from "@/lib/opsLoop";
+import { DEFAULT_IDLE_WORKING_DAYS, detectUsageIssues } from "@/lib/usage";
 import { backupDir, getBackupState } from "@/server/backup";
 import { syncN8nWorkflows, type SyncReport } from "@/server/automation/n8nSync";
 import type { RunSource } from "@/server/automation/rules";
+import { computeHealth, WATCHDOG_TICK_KEY } from "@/server/health";
+import { sendPendingAlerts } from "@/server/incidentAlerts";
 import { isN8nApiConfigured } from "@/server/n8nApi";
 import { getReadinessReport, type ReadinessReport } from "@/server/readiness";
+import { syncRevenueIncidents } from "@/server/revenueGuard";
 import {
   recordAutoFix,
   supersedeDatedNotifications,
@@ -25,7 +30,9 @@ import { getSystemState, setSystemState } from "@/server/store/systemState";
 // Nửa còn lại chạy trong n8n (`n8n-workflows/app_watchdog.json`): hỏi /api/health mỗi 30
 // phút, email khi app chết HOẶC khi lượt canh gác này ngừng chạy. Hai bên canh nhau.
 
-export const WATCHDOG_TICK_KEY = "watchdog:lastTick";
+export { WATCHDOG_TICK_KEY };
+/** Lần gửi nhịp gần nhất ra canh gác bên ngoài (HEARTBEAT_URL). */
+export const HEARTBEAT_KEY = "heartbeat:last";
 /** Lần cuối workflow "Canh gác app" bên n8n hỏi /api/health theo lịch — ghi ở route health. */
 export const N8N_WATCHDOG_SEEN_KEY = "watchdog:n8nLastSeen";
 
@@ -148,8 +155,59 @@ export async function runWatchdog(source: RunSource, sync?: SyncReport): Promise
     errors.push(`kiểm tra vận hành: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  // Thất thoát doanh thu: route sửa lệnh đã đồng bộ ngay, ở đây bắt nốt thứ đổi theo thời gian
+  // (giao xe quá 24 giờ chưa lập hoá đơn) và thứ sửa ở chỗ khác (sửa giá trong kho).
+  try {
+    const r = await syncRevenueIncidents(now);
+    opened += r.opened;
+    resolved += r.resolved;
+  } catch (error) {
+    errors.push(`thất thoát: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // Mức sử dụng: xưởng ngừng lập lệnh. Đi theo công tắc của "Báo cáo tuần cho chủ gara".
+  try {
+    const [rule] = await db
+      .select({ enabled: automationRules.enabled, days: automationRules.thresholdDays })
+      .from(automationRules)
+      .where(sql`${automationRules.type} = 'owner_weekly_report'`)
+      .limit(1);
+    const [span] = await db
+      .select({
+        first: sql<string | null>`min(${serviceOrders.receivedAt})`,
+        last: sql<string | null>`max(${serviceOrders.receivedAt})`,
+      })
+      .from(serviceOrders);
+    const usage =
+      rule && !rule.enabled
+        ? []
+        : detectUsageIssues(
+            {
+              firstOrderAt: span?.first ? new Date(span.first) : null,
+              lastOrderAt: span?.last ? new Date(span.last) : null,
+            },
+            now,
+            rule?.days ?? DEFAULT_IDLE_WORKING_DAYS,
+          );
+    const r = await syncIncidents("usage", "manager", usage);
+    opened += r.opened;
+    resolved += r.resolved;
+  } catch (error) {
+    errors.push(`mức sử dụng: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // Email báo nhanh — sau mọi lần đồng bộ ở trên, để một lượt chỉ ra MỘT email.
+  let alertNote = "";
+  try {
+    const a = await sendPendingAlerts();
+    if (a.status === "sent") alertNote = `; email báo ${a.opened} mới, ${a.resolved} đã xong`;
+    else if (a.status === "error") alertNote = `; email báo nhanh lỗi (${a.detail}), lượt sau gửi lại`;
+  } catch (error) {
+    errors.push(`email báo nhanh: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
   const summary =
-    `Mở ${opened}, đóng ${resolved}, tự sửa ${autoFixed}; ${n8nNote}` +
+    `Mở ${opened}, đóng ${resolved}, tự sửa ${autoFixed}; ${n8nNote}${alertNote}` +
     (errors.length ? `. Lỗi: ${errors.join(" | ")}` : "");
 
   // Nhịp của CHÍNH bộ canh gác — /api/health đọc nó để biết lịch nội bộ còn sống. Lần bấm tay
@@ -161,5 +219,36 @@ export async function runWatchdog(source: RunSource, sync?: SyncReport): Promise
     );
   }
 
+  // Nhịp ra canh gác BÊN NGOÀI — sau khi đã ghi nhịp trong app, để phép đo sức khoẻ thấy
+  // đúng lượt này. Chỉ lượt theo lịch: bấm tay không được làm dịch vụ ngoài tưởng lịch còn sống.
+  if (source !== "manual") await pingHeartbeat(summary);
+
   return { status: errors.length ? "error" : "ok", opened, resolved, autoFixed, summary };
+}
+
+/**
+ * Gửi nhịp tới HEARTBEAT_URL (healthchecks.io…). Khoẻ -> URL gốc; hỏng -> `/fail`. Không bao
+ * giờ throw: mạng ra ngoài chập chờn thì dịch vụ bên kia sẽ tự thấy nhịp trễ — đó là việc của nó.
+ */
+async function pingHeartbeat(summary: string) {
+  const base = process.env.HEARTBEAT_URL?.trim();
+  if (!base) return;
+  const at = new Date().toISOString();
+  try {
+    const health = await computeHealth();
+    const failing = health.checks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`);
+    const res = await fetch(heartbeatPingUrl(base, health.status), {
+      method: "POST",
+      body: [health.status, ...failing, summary].join("\n").slice(0, 10_000),
+      signal: AbortSignal.timeout(10_000),
+    });
+    await setSystemState(HEARTBEAT_KEY, { at, status: health.status, ok: res.ok, error: res.ok ? null : `HTTP ${res.status}` });
+  } catch (error) {
+    await setSystemState(HEARTBEAT_KEY, {
+      at,
+      status: null,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }).catch(() => {});
+  }
 }

@@ -271,6 +271,18 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
     });
   }
 
+  if (process.env.BACKUP_DIR && !process.env.BACKUP_COPY_DIR) {
+    items.push({
+      id: "no-offsite-backup",
+      severity: "warning",
+      group: "Dữ liệu",
+      title: "Bản sao lưu chỉ nằm trên máy chủ",
+      detail:
+        "Sao lưu tự động đang chạy nhưng chỉ ghi vào BACKUP_DIR trên chính máy chủ. Máy hỏng ổ, bị trộm, cháy — mất cả dữ liệu lẫn bản sao.",
+      fix: "Cài Google Drive for Desktop hoặc OneDrive trên máy chủ, rồi đặt BACKUP_COPY_DIR trỏ vào một thư mục trong đó (Docker: xem BACKUP_COPY_HOST_DIR trong docker-compose.yml).",
+    });
+  }
+
   // --- Cấu hình ---
 
   const missingCompanyFields = [
@@ -372,6 +384,20 @@ export async function getReadinessReport(): Promise<ReadinessReport> {
       detail: `Thiếu: ${missingWorkflows.join("; ")}. Quy tắc bật trong app nhưng không có gì thực thi.`,
       fix: "Bộ canh gác sẽ tự tạo ở lượt tới; hoặc vào Tự động hoá → Đồng bộ workflow để tạo ngay. App tự nối theo tên workflow, không cần dán ID.",
       href: "/dashboard/automation",
+    });
+  }
+
+  // App và n8n canh nhau, nhưng thường cùng một máy: mất điện/mất mạng thì cả hai cùng im.
+  // Chỉ nhắc ở bản chạy thật (production hoặc đã bật lịch nội bộ) — máy dev không cần.
+  if (!process.env.HEARTBEAT_URL && (process.env.INTERNAL_SCHEDULER === "true" || process.env.NODE_ENV === "production")) {
+    items.push({
+      id: "no-external-watchdog",
+      severity: "warning",
+      group: "Tự động hoá",
+      title: "Chưa có canh gác từ bên ngoài",
+      detail:
+        "Máy chủ mất điện, mất mạng hay treo thì cả app lẫn n8n cùng im — không còn ai gửi được email báo. Cần một dịch vụ BÊN NGOÀI đợi nhịp và tự báo khi nhịp ngừng.",
+      fix: "Tạo tài khoản healthchecks.io (miễn phí), tạo check chu kỳ 30 phút / ân hạn 30 phút, bật email, rồi dán ping URL vào HEARTBEAT_URL và khởi động lại app.",
     });
   }
 

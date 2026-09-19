@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { conflict, handle, unauthorized } from "@/server/api";
 import { requireUser } from "@/server/session";
+import { syncRevenueIncidentsSafe } from "@/server/revenueGuard";
 import { billSpecialOrder, SpecialOrderStateError } from "@/server/store/specialOrders";
 import { parseBody, vndAmount } from "@/server/validation";
 
@@ -23,6 +24,7 @@ export async function POST(request: Request, { params }: Params) {
 
     try {
       const line = await billSpecialOrder(specialId, parsed.data);
+      after(syncRevenueIncidentsSafe);
       return NextResponse.json({ line }, { status: 201 });
     } catch (error) {
       if (error instanceof SpecialOrderStateError) return conflict(error.message);

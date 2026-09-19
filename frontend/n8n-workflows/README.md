@@ -14,6 +14,8 @@ Public API — xem §0.1. Import tay vẫn làm được nhưng không còn cầ
 | `awaiting_acceptance_reminder.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/awaiting-acceptance` | **Khách hàng** (1 thư/lệnh) + bản tổng hợp cho gara |
 | `unpaid_invoice_report.json` | Lịch, 9h mỗi ngày | `GET /api/n8n/internal/unpaid-invoices` | Chỉ **email doanh nghiệp** — không gửi khách |
 | `revenue_report.json` | Lịch, 20h mỗi ngày | `GET /api/n8n/internal/revenue?period=day` | Email doanh nghiệp |
+| `owner_weekly_report.json` **(mới 20/09)** | Lịch, 8h thứ Hai | `GET /api/n8n/internal/owner-weekly` | Email doanh nghiệp — báo cáo tuần cho chủ gara (luôn gửi, kể cả tuần 0 lệnh) |
+| `incident_alert.json` **(hạ tầng, mới 20/09)** | Webhook `POST /webhook/incident-alert` | — (app gọi vào, kèm `X-Internal-Token`) | Email doanh nghiệp — sự cố mức cao mới mở / đã khắc phục. Chỉ trả 200 sau khi email đã gửi |
 | `app_watchdog.json` **(hạ tầng)** | Lịch, mỗi 30 phút | `GET /api/health` | Email doanh nghiệp — **chỉ** khi app không phản hồi / vòng tự động hỏng, và khi đã hoạt động lại |
 
 ## 0.1 Thay đổi ngày 18/09/2026 — không còn import tay

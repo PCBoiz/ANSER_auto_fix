@@ -1,11 +1,15 @@
 import { and, asc, desc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import {
+  appointments,
   customers,
+  invoices,
+  notifications,
   purchaseLedger,
   salesLedger,
   serviceOrders,
   serviceOrderSpecialOrders,
+  users,
   vehicles,
 } from "@/server/db/schema";
 import {
@@ -15,6 +19,7 @@ import {
 } from "@/server/domain";
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format";
 import { escapeHtml } from "@/lib/html";
+import { accountStatus, weekWindows, withDelta } from "@/lib/usage";
 import { listUpcomingAppointments } from "@/server/store/appointments";
 import { listUnpaidInvoicesOlderThan } from "@/server/store/invoices";
 import { countLowStockParts, listLowStockParts } from "@/server/store/parts";
@@ -53,7 +58,7 @@ export type DigestSection = {
 };
 
 export type Digest = {
-  kind: "morning_brief" | "accounting_digest";
+  kind: "morning_brief" | "accounting_digest" | "owner_weekly";
   subject: string;
   generatedAt: Date;
   sections: DigestSection[];
@@ -499,3 +504,163 @@ export async function buildAccountingDigest(options: {
     text: renderText(subject, nonEmpty),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Báo cáo tuần cho chủ gara (bổ sung 20/09/2026)
+// ---------------------------------------------------------------------------
+
+const ROLE_LABELS: Record<string, string> = { staff: "Nhân viên", manager: "Quản lý", admin: "Quản trị" };
+
+/**
+ * Trả lời "app có THẬT SỰ được dùng không" bằng số: lệnh, xe giao, doanh thu tuần này so với
+ * tuần trước; ai đăng nhập, ai chưa từng; thất thoát còn mở; vòng tự động đã tự lo được gì.
+ *
+ * Luôn gửi, kể cả tuần trống trơn: "0 lệnh" chính là tín hiệu quan trọng nhất của báo cáo này
+ * — bản tin sáng im lặng khi không có việc, còn báo cáo tuần im lặng thì chủ gara không phân
+ * biệt được "không có gì" với "hệ thống hỏng".
+ */
+export async function buildOwnerWeekly(options: { companyName: string; now?: Date }): Promise<Digest> {
+  const now = options.now ?? new Date();
+  const { current: cur, previous: prev } = weekWindows(now);
+  const between = (col: Parameters<typeof sql>[1], w: { from: Date; to: Date }) =>
+    sql`${col} >= ${w.from.toISOString()} and ${col} < ${w.to.toISOString()}`;
+
+  // Một câu truy vấn cho mọi phép đếm — cùng lý do với trang Kiểm tra vận hành (mỗi chặng tới
+  // Neon ~250ms).
+  const [c] = await db
+    .select({
+      ordersNow: sql<number>`(select count(*) from ${serviceOrders} where ${between(serviceOrders.receivedAt, cur)})::int`,
+      ordersPrev: sql<number>`(select count(*) from ${serviceOrders} where ${between(serviceOrders.receivedAt, prev)})::int`,
+      deliveredNow: sql<number>`(select count(*) from ${serviceOrders} where ${between(serviceOrders.deliveredAt, cur)})::int`,
+      deliveredPrev: sql<number>`(select count(*) from ${serviceOrders} where ${between(serviceOrders.deliveredAt, prev)})::int`,
+      invoicesNow: sql<number>`(select count(*) from ${invoices} where ${between(invoices.issuedAt, cur)})::int`,
+      invoicesPrev: sql<number>`(select count(*) from ${invoices} where ${between(invoices.issuedAt, prev)})::int`,
+      revenueNow: sql<number>`(select coalesce(sum(${invoices.total}), 0) from ${invoices} where ${between(invoices.issuedAt, cur)})::float8`,
+      revenuePrev: sql<number>`(select coalesce(sum(${invoices.total}), 0) from ${invoices} where ${between(invoices.issuedAt, prev)})::float8`,
+      paidNow: sql<number>`(select coalesce(sum(${invoices.paidAmount}), 0) from ${invoices} where ${between(invoices.issuedAt, cur)})::float8`,
+      customersNow: sql<number>`(select count(*) from ${customers} where ${between(customers.createdAt, cur)})::int`,
+      customersPrev: sql<number>`(select count(*) from ${customers} where ${between(customers.createdAt, prev)})::int`,
+      apptNow: sql<number>`(select count(*) from ${appointments} where ${between(appointments.scheduledAt, cur)})::int`,
+      apptNoShowNow: sql<number>`(select count(*) from ${appointments} where ${between(appointments.scheduledAt, cur)} and ${appointments.status} = 'no_show')::int`,
+      loopOpened: sql<number>`(select count(*) from ${notifications} where ${notifications.kind} in ('watchdog','revenue','usage','readiness') and ${between(notifications.createdAt, cur)})::int`,
+      loopVerified: sql<number>`(select count(*) from ${notifications} where ${notifications.resolution} = 'verified' and ${between(notifications.resolvedAt, cur)})::int`,
+      loopAuto: sql<number>`(select count(*) from ${notifications} where ${notifications.resolution} = 'auto' and ${between(notifications.resolvedAt, cur)})::int`,
+      loopOpenNow: sql<number>`(select count(*) from ${notifications} where ${notifications.kind} in ('watchdog','revenue','usage','readiness') and ${notifications.resolvedAt} is null)::int`,
+    })
+    .from(sql`(select 1) as _`);
+
+  const [accounts, revenueOpen] = await Promise.all([
+    db
+      .select({
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        role: users.role,
+        lastLoginAt: users.lastLoginAt,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .orderBy(desc(users.lastLoginAt)),
+    db
+      .select({ title: notifications.title, severity: notifications.severity })
+      .from(notifications)
+      .where(and(eq(notifications.kind, "revenue"), sql`${notifications.resolvedAt} is null`))
+      .orderBy(desc(notifications.severity), desc(notifications.createdAt))
+      .limit(15),
+  ]);
+
+  const accountRows = accounts.map((a) => {
+    // Cùng thứ tự hiển thị với Topbar: firstName đứng trước ("Trần Minh" + "Khoa").
+    const name = `${a.firstName} ${a.lastName}`.trim() || a.email;
+    const st = accountStatus({ name, email: a.email, role: a.role, lastLoginAt: a.lastLoginAt, createdAt: a.createdAt }, now);
+    return { flagged: st.flagged, row: [name, ROLE_LABELS[a.role] ?? a.role, `${st.flagged ? "⚠ " : ""}${st.label}`] };
+  });
+  const flagged = accountRows.filter((r) => r.flagged).length;
+
+  const sections: DigestSection[] = [
+    {
+      key: "activity",
+      title: "Hoạt động 7 ngày qua",
+      priority: "normal",
+      count: c.ordersNow,
+      headline:
+        c.ordersNow === 0
+          ? "Không có lệnh sửa chữa mới nào trong 7 ngày qua."
+          : `${c.ordersNow} lệnh mới, ${c.deliveredNow} xe giao, doanh thu hoá đơn ${formatVnd(c.revenueNow)}.`,
+      columns: ["Chỉ số", "7 ngày qua"],
+      rows: [
+        ["Lệnh sửa chữa mới", withDelta(c.ordersNow, c.ordersPrev)],
+        ["Xe đã giao", withDelta(c.deliveredNow, c.deliveredPrev)],
+        ["Hoá đơn đã xuất", withDelta(c.invoicesNow, c.invoicesPrev)],
+        ["Doanh thu theo hoá đơn", withDelta(c.revenueNow, c.revenuePrev, formatVnd)],
+        ["Đã thu (của hoá đơn tuần này)", formatVnd(c.paidNow)],
+        ["Khách hàng mới", withDelta(c.customersNow, c.customersPrev)],
+        ["Lịch hẹn", `${c.apptNow}${c.apptNoShowNow ? ` (không tới: ${c.apptNoShowNow})` : ""}`],
+      ],
+      href: "/dashboard/reports",
+    },
+    {
+      key: "revenue_open",
+      title: "Thất thoát đang mở",
+      priority: revenueOpen.length > 0 ? "high" : "normal",
+      count: revenueOpen.length,
+      headline:
+        revenueOpen.length > 0
+          ? `${revenueOpen.length} chỗ có thể mất tiền: dòng 0đ, bán dưới vốn, giảm giá chờ duyệt, giao xe chưa lập hoá đơn.`
+          : "Không có chỗ thất thoát nào đang mở.",
+      columns: ["Việc", "Mức"],
+      rows: revenueOpen.map((r) => [r.title, r.severity === "high" ? "Cao" : "Thường"]),
+      href: "/dashboard/orders",
+    },
+    {
+      key: "accounts",
+      title: "Ai đang dùng app",
+      priority: "normal",
+      count: flagged,
+      headline:
+        flagged > 0
+          ? `${flagged}/${accounts.length} tài khoản chưa từng đăng nhập hoặc đã bỏ dùng từ 14 ngày.`
+          : `Cả ${accounts.length} tài khoản đều đang dùng.`,
+      columns: ["Tài khoản", "Vai trò", "Đăng nhập gần nhất"],
+      rows: accountRows.map((r) => r.row),
+      href: "/dashboard/accounts",
+    },
+    {
+      key: "loop",
+      title: "Vòng tự phát hiện – tự khép",
+      priority: "normal",
+      count: c.loopOpenNow,
+      headline: `Tuần qua: ${c.loopOpened} sự cố mới, ${c.loopVerified} đã khắc phục, ${c.loopAuto} hệ thống tự sửa. Đang mở: ${c.loopOpenNow}.`,
+      columns: ["", "Số"],
+      rows: [
+        ["Sự cố mới phát hiện", String(c.loopOpened)],
+        ["Đã khắc phục (đo lại xác nhận)", String(c.loopVerified)],
+        ["Hệ thống tự sửa", String(c.loopAuto)],
+        ["Đang mở", String(c.loopOpenNow)],
+      ],
+      href: "/dashboard/readiness",
+    },
+  ];
+
+  const bits = [`${c.ordersNow} lệnh`, `${formatVnd(c.revenueNow)} doanh thu`];
+  if (revenueOpen.length) bits.push(`${revenueOpen.length} thất thoát cần xem`);
+  if (flagged) bits.push(`${flagged} tài khoản chưa dùng`);
+  const subject = `📊 Tuần qua ở ${options.companyName}: ${bits.join(", ")}`;
+  const period = `${formatDate(cur.from)} – ${formatDate(new Date(cur.to.getTime() - 1))}`;
+
+  return {
+    kind: "owner_weekly",
+    subject,
+    generatedAt: now,
+    sections,
+    totalItems: sections.length,
+    html: renderHtml(
+      `Báo cáo tuần (${period})`,
+      "App có thật sự được dùng không — đo từ dữ liệu, so với tuần trước.",
+      sections,
+      `${options.companyName} — tạo lúc ${formatDateTime(now)}`,
+    ),
+    text: renderText(subject, sections),
+  };
+}
+

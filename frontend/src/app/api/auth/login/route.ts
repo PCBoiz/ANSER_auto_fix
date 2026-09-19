@@ -7,7 +7,7 @@ import { apiError, handle, unauthorized } from "@/server/api";
 import { checkLoginAllowed, clientIpOf, recordLoginAttempt } from "@/server/loginThrottle";
 import { resolveUserFlow } from "@/server/session";
 import { parseBody } from "@/server/validation";
-import { findUserByEmail, toPublicUser } from "@/server/store/users";
+import { findUserByEmail, toPublicUser, touchLastLogin } from "@/server/store/users";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +47,7 @@ export async function POST(request: Request) {
     }
 
     await recordLoginAttempt(email, ip, true);
+    await touchLastLogin(user.id);
 
     const cookieStore = await cookies();
     cookieStore.set(

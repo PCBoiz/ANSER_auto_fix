@@ -97,4 +97,14 @@ describe("sự cố sao lưu cho bộ canh gác", () => {
   it("đã tắt sao lưu tự động (bỏ BACKUP_DIR) -> không báo 'ngừng chạy'", () => {
     expect(backupIncidents({ configured: false, last: ok(100), lastOk: ok(100) }, now)).toEqual([]);
   });
+
+  it("chép ra thư mục ngoài lỗi -> sự cố riêng, kể cả khi bản trên máy vẫn tốt", () => {
+    const last: BackupState = { ...ok(1), copied: false, copyError: "ENOENT: G:/My Drive" };
+    const out = backupIncidents({ configured: true, last, lastOk: last }, now);
+    expect(out.map((i) => i.key)).toEqual(["watchdog:backup:copy-failed"]);
+    expect(out[0].body).toContain("ENOENT");
+    // Chưa cấu hình chép ra ngoài (copied không có) -> không báo ở đây (trang Kiểm tra vận hành nhắc).
+    expect(backupIncidents({ configured: true, last: ok(1), lastOk: ok(1) }, now)).toEqual([]);
+  });
 });
+

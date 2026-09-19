@@ -27,12 +27,14 @@ import { getCompanySettings } from "@/server/store/settings";
 // chạy được cả trên serverless nơi thư mục `n8n-workflows/` không nằm cạnh mã đã build.
 import accountingDigest from "../../../n8n-workflows/accounting_digest.json";
 import appWatchdog from "../../../n8n-workflows/app_watchdog.json";
+import incidentAlert from "../../../n8n-workflows/incident_alert.json";
 import appointmentReminder from "../../../n8n-workflows/appointment_reminder.json";
 import awaitingAcceptance from "../../../n8n-workflows/awaiting_acceptance_reminder.json";
 import lowStockAlert from "../../../n8n-workflows/low_stock_alert.json";
 import maintenanceReminder from "../../../n8n-workflows/maintenance_reminder.json";
 import morningBrief from "../../../n8n-workflows/morning_brief.json";
 import orderStatusUpdate from "../../../n8n-workflows/order_status_update.json";
+import ownerWeekly from "../../../n8n-workflows/owner_weekly_report.json";
 import revenueReport from "../../../n8n-workflows/revenue_report.json";
 import unpaidInvoiceReport from "../../../n8n-workflows/unpaid_invoice_report.json";
 
@@ -52,6 +54,7 @@ type TemplateEntry = {
 const TEMPLATES: TemplateEntry[] = [
   { file: "morning_brief.json", template: morningBrief as WorkflowTemplate, ruleType: "morning_brief" },
   { file: "accounting_digest.json", template: accountingDigest as WorkflowTemplate, ruleType: "accounting_digest" },
+  { file: "owner_weekly_report.json", template: ownerWeekly as WorkflowTemplate, ruleType: "owner_weekly_report" },
   { file: "low_stock_alert.json", template: lowStockAlert as WorkflowTemplate, ruleType: "low_stock_alert" },
   { file: "maintenance_reminder.json", template: maintenanceReminder as WorkflowTemplate, ruleType: "maintenance_reminder" },
   { file: "appointment_reminder.json", template: appointmentReminder as WorkflowTemplate, ruleType: "appointment_reminder" },
@@ -60,6 +63,7 @@ const TEMPLATES: TemplateEntry[] = [
   { file: "revenue_report.json", template: revenueReport as WorkflowTemplate, ruleType: "revenue_report" },
   { file: "order_status_update.json", template: orderStatusUpdate as WorkflowTemplate, ruleType: "order_status_update" },
   { file: "app_watchdog.json", template: appWatchdog as WorkflowTemplate, ruleType: null },
+  { file: "incident_alert.json", template: incidentAlert as WorkflowTemplate, ruleType: null },
 ];
 
 export type SyncItemResult = {

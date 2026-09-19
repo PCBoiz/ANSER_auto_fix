@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { PlusIcon, TrashIcon } from "@/components/dashboard/icons";
 import { MoneyField, SelectField, TextAreaField, TextField } from "@/components/ui/Field";
 import Modal from "@/components/ui/Modal";
+import { needsDiscountApproval } from "@/lib/revenueGuard";
 import {
   Badge,
   Card,
@@ -78,6 +79,7 @@ type Detail = {
     laborTotal: number;
     partsTotal: number;
     discount: number;
+    discountApprovedAmount: number | null;
     total: number;
     note: string | null;
     advisorId: string | null;
@@ -137,6 +139,8 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Cảnh báo không chặn (vd vừa thêm dòng 0đ) — khác `error`: thao tác ĐÃ thành công.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [services, setServices] = useState<Array<{ id: string; name: string; laborPrice: number; standardMinutes: number }>>([]);
   const [parts, setParts] = useState<Array<{ id: string; code: string; name: string; price: number; stock: number; unit: string; branchId: string }>>([]);
@@ -219,12 +223,11 @@ export default function OrderDetailPage() {
     setBusy(true);
     try {
       const res = await fetch(url, init);
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message ?? "Thao tác thất bại.");
-      }
+      const data = res.status === 204 ? null : await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message ?? "Thao tác thất bại.");
       await load();
       setError(null);
+      setNotice(data?.warning ?? null);
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi không xác định.");
@@ -270,6 +273,14 @@ export default function OrderDetailPage() {
       body: JSON.stringify({ discount: discountValue }),
     });
     if (ok) setDiscountModal(false);
+  }
+
+  async function approveDiscount() {
+    await call(`/api/service-orders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approveDiscount: true }),
+    });
   }
 
   async function submitSpecial(e: FormEvent) {
@@ -356,6 +367,11 @@ export default function OrderDetailPage() {
       </Link>
 
       <ErrorBanner message={error} />
+      {notice && (
+        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {notice}
+        </div>
+      )}
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -510,7 +526,9 @@ export default function OrderDetailPage() {
                           </select>
                         </td>
                         <td className="px-5 py-2 text-right">{l.quantity}</td>
-                        <td className="px-5 py-2 text-right text-zinc-400">{formatVnd(l.unitPrice)}</td>
+                        <td className={`px-5 py-2 text-right ${l.unitPrice === 0 ? "font-semibold text-red-400" : "text-zinc-400"}`}>
+                          {formatVnd(l.unitPrice)}
+                        </td>
                         <td className="px-5 py-2 text-right font-semibold">{formatVnd(l.lineTotal)}</td>
                         <td className="px-5 py-2">
                           {!locked && (
@@ -572,7 +590,9 @@ export default function OrderDetailPage() {
                         <td className="px-5 py-2 text-right">
                           {p.quantity} {p.unit}
                         </td>
-                        <td className="px-5 py-2 text-right text-zinc-400">{formatVnd(p.unitPrice)}</td>
+                        <td className={`px-5 py-2 text-right ${p.unitPrice === 0 ? "font-semibold text-red-400" : "text-zinc-400"}`}>
+                          {formatVnd(p.unitPrice)}
+                        </td>
                         <td className="px-5 py-2 text-right font-semibold">{formatVnd(p.lineTotal)}</td>
                         <td className="px-5 py-2">
                           {!locked && (
@@ -726,6 +746,24 @@ export default function OrderDetailPage() {
                   )}
                 </dd>
               </div>
+              {!locked &&
+                needsDiscountApproval({
+                  subtotal: order.laborTotal + order.partsTotal,
+                  discount: order.discount,
+                  discountApprovedAmount: order.discountApprovedAmount,
+                }) && (
+                  // Giảm giá lớn do nhân viên đặt (hoặc bị sửa sau khi đã duyệt) — xem lib/revenueGuard.ts.
+                  <div className="flex items-center justify-between gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs">
+                    <span className="text-amber-200">Giảm giá lớn — chờ quản lý duyệt</span>
+                    <button
+                      onClick={approveDiscount}
+                      disabled={busy}
+                      className="shrink-0 font-semibold whitespace-nowrap text-amber-300 hover:underline disabled:opacity-50"
+                    >
+                      Duyệt
+                    </button>
+                  </div>
+                )}
               <div className="mt-2 flex justify-between border-t border-white/[0.08] pt-2 text-base font-bold">
                 <dt>Tổng cộng</dt>
                 <dd>{formatVnd(order.total)}</dd>

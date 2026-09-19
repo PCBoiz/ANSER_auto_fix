@@ -57,11 +57,18 @@ services:
       # Sao lưu mỗi ngày 2h sáng vào volume riêng, giữ 14 bản. Volume vẫn nằm trên CÙNG máy —
       # vẫn phải chép ra ngoài định kỳ (xem docs/VIEC_CAN_LAM.md).
       - BACKUP_DIR=/app/backups
+      # App gọi n8n (email báo nhanh) qua tên dịch vụ trong mạng compose.
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook
     volumes:
       - anser_auto_backups:/app/backups
+      # Bản sao THỨ HAI ra ngoài máy: đặt BACKUP_COPY_HOST_DIR (trong file .env cạnh file này)
+      # là đường dẫn thư mục Google Drive/OneDrive trên máy chủ, và BACKUP_COPY_DIR=/app/backups-copy
+      # trong .env.app. Không đặt thì gắn tạm vào volume (vẫn cùng máy — trang Kiểm tra vận hành nhắc).
+      - ${BACKUP_COPY_HOST_DIR:-anser_auto_backups_copy}:/app/backups-copy
 
 volumes:
   anser_auto_n8n_data:
   anser_auto_backups:
+  anser_auto_backups_copy:
 # Cổng 5681/1027/8027 được chọn để KHÔNG đụng ANSER Flask (5680/1025/8025) và
 # ANSER Web v2 (5679/1026/8026) nếu chạy song song trên cùng một máy.

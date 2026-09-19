@@ -25,8 +25,8 @@ const opts = {
 };
 
 describe("Mọi file mẫu trong n8n-workflows/ (kiểm tra cả bộ, không chỉ một file)", () => {
-  it("có ít nhất 10 mẫu (9 nghiệp vụ + canh gác app)", () => {
-    expect(templates.length).toBeGreaterThanOrEqual(10);
+  it("có ít nhất 12 mẫu (10 nghiệp vụ + canh gác app + báo nhanh sự cố)", () => {
+    expect(templates.length).toBeGreaterThanOrEqual(12);
   });
 
   it.each(templates)("%s: đồ thị nối đúng node có thật", (_file, wf) => {
