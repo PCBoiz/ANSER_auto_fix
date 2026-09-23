@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Thư mục build riêng của git hook (NEXT_DIST_DIR=.next-hook, xem next.config.ts). Không
+    // bỏ qua thì lint quét chính mã đã đóng gói và đỏ hàng loạt — đã gặp khi push.
+    ".next-hook/**",
   ]),
 ]);
 
