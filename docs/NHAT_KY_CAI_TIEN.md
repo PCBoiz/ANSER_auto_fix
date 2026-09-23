@@ -133,6 +133,11 @@ Test lại toàn bộ: `npm run check` xanh (219 test), `docker compose config` 
 n8n đúng đồ thị, health/canh gác/báo cáo tuần/sao lưu chạy đúng trên dev server thật, DB thật
 không sót bản ghi thử. Bản kiểm kê đếm được **31 quy trình tự động** đang có.
 
+Hai lỗi của chính hook, tìm ra khi push thật: (1) trên Windows, build của hook tranh file `.next`
+với `npm run dev` đang mở → cho hook build sang `.next-hook` (`NEXT_DIST_DIR`); (2) lint quét luôn
+`.next-hook` vì `eslint-config-next` chỉ bỏ qua `.next` → thêm vào `globalIgnores`. Sau đó push
+thật đi qua hook thành công.
+
 ---
 
 ## Số liệu đã đo trên dữ liệu thật (đừng đo lại từ đầu)

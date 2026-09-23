@@ -57,6 +57,7 @@
 |---|---|
 | `npm run data:clean-demo --apply`: npm **nuốt** cờ, script chỉ chạy xem trước, người gõ tưởng đã xoá | `npm run data:clean-demo -- --apply` (có `--` ở giữa). Script giờ in "CHƯA XOÁ GÌ" |
 | `lệnh \| tail` che mã thoát của lệnh | Kiểm tra `$?` ngay sau lệnh, hoặc `${PIPESTATUS[0]}`. Đã từng commit 2 lỗi lint vì vậy |
+| Hook chạy tay thì xanh, chạy qua `git push` thì đỏ | Hook build sang `.next-hook`; `eslint-config-next` chỉ bỏ qua `.next`, nên lượt lint SAU đó quét luôn mã đã đóng gói. Chạy tay lần đầu xanh vì thư mục chưa tồn tại. Thêm `.next-hook/**` vào `globalIgnores`. Bài học: thư mục build mới thì phải khai báo cho cả lint, gitignore và script quét bundle |
 | Docker Desktop "Failed to apply delta update" | Cài lại. Trong lúc chờ, thử n8n bằng npm (mục 5) |
 | CI trên fork đỏ, job 0 bước | Tài khoản GitHub bị khoá thanh toán, không phải do code. Dùng `npm run check` |
 | (AI agent) Công cụ ghi file giải mã `\uXXXX` thành ký tự thật | Viết regex Unicode bằng cách khác, hoặc sinh bằng script. Sau khi sửa, quét ký tự vô hình (BOM, zero-width) |
