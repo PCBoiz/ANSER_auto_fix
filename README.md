@@ -14,6 +14,7 @@ ANSER_methuy/
 ├── STACK_DECISIONS.md   Vì sao chọn stack này, hướng tách AI/n8n
 ├── docs/
 │   ├── TONG_HOP_TU_DONG_HOA.md  Một file gửi cho người khác: TOÀN BỘ quy trình tự động
+│   ├── KE_HOACH_DOT_TIEP_THEO.md Kế hoạch đợt tới: lên VPS, nhập khách, duyệt báo giá qua Zalo, bấm giờ
 │   ├── VIEC_CAN_LAM.md       ← BẮT ĐẦU Ở ĐÂY: việc người vận hành cần làm, theo thứ tự
 │   ├── VAN_HANH_VONG_LAP.md  Sổ tay: mỗi sự cố/email cảnh báo nghĩa là gì, làm gì
 │   ├── NHAT_KY_CAI_TIEN.md   Đã làm gì, vì sao, ở commit nào

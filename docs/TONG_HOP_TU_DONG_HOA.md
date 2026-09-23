@@ -5,6 +5,8 @@
 >
 > Cập nhật: 24/09/2026 · Repo: `PCBoiz/ANSER_auto_fix` (fork của `Dgsonn/ANSER_auto`), nhánh `main`.
 >
+> Việc sắp làm tiếp: [kế hoạch đợt tới](KE_HOACH_DOT_TIEP_THEO.md).
+>
 > Các file liên quan: [việc người vận hành cần làm](VIEC_CAN_LAM.md) ·
 > [sổ tay xử lý sự cố](VAN_HANH_VONG_LAP.md) · [nhật ký đã làm gì](NHAT_KY_CAI_TIEN.md) ·
 > [bẫy đã gặp](BAI_HOC_VA_BAY.md) · kiến trúc: `../ARCHITECTURE.md` §12–§13.
