@@ -27,6 +27,8 @@ const hook = `#!/bin/sh
 # Chặn push khi typecheck/lint/test/build đỏ. Bỏ qua một lần: git push --no-verify
 echo "[pre-push] npm run check (bỏ qua bằng --no-verify)"
 cd "$(dirname "$0")/../../frontend" || exit 1
+# Build sang thư mục riêng: nếu đang mở "npm run dev" thì hai bên không tranh .next (Windows).
+export NEXT_DIST_DIR=.next-hook
 npm run check || {
   echo ""
   echo "[pre-push] ĐỎ — chưa push. Sửa xong chạy lại, hoặc git push --no-verify nếu thật sự cần."

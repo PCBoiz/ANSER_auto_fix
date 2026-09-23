@@ -15,6 +15,7 @@
 
 # next.js
 /.next/
+/.next-hook/
 /out/
 
 # sinh tự động từ n8n-workflows/ trước dev/build (scripts/sync-n8n-templates.mjs) — không sửa

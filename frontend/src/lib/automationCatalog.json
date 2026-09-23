@@ -334,7 +334,7 @@
       "name": "Chuỗi kiểm tra trước khi push",
       "group": "infra",
       "trigger": "npm run check, và git hook pre-push sau khi cài npm run hooks:install",
-      "does": "typecheck → lint → 219 test → build → quét bundle client xem 3 mật khẩu đã lộ có quay lại không.",
+      "does": "typecheck → lint → 219 test → build → quét bundle client xem 3 mật khẩu đã lộ có quay lại không. Hook build sang .next-hook để không tranh file với dev server đang mở.",
       "closes": "Hook chặn push khi đỏ — thay cho CI GitHub đang bị khoá vì vấn đề thanh toán của tài khoản.",
       "where": "package.json, scripts/install-git-hooks.mjs, .github/workflows/ci.yml",
       "env": []

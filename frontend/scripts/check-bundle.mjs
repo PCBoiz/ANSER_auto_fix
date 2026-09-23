@@ -7,7 +7,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const LEAKED = ["demo1234", "aa660156", "f7820a49"];
-const ROOT = ".next/static";
+// Theo đúng thư mục build vừa dùng: git hook build sang `.next-hook` để không tranh file với
+// `npm run dev` đang mở (xem next.config.ts — distDir).
+const ROOT = join(process.env.NEXT_DIST_DIR || ".next", "static");
 
 function* walk(dir) {
   for (const name of readdirSync(dir)) {
