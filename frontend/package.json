@@ -14,6 +14,8 @@
     "db:migrate": "drizzle-kit migrate",
     "data:clean-demo": "node scripts/clean-demo-data.mjs",
     "db:backup": "node scripts/backup-db.mjs",
+    "docs:automation": "tsx scripts/gen-automation-doc.ts",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
     "db:restore": "node scripts/restore-db.mjs",
     "typecheck": "tsc --noEmit",
     "data:name-prices": "node scripts/extract-name-prices.mjs",
@@ -44,6 +46,7 @@
     "eslint": "^9",
     "eslint-config-next": "^16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^5.0.1"

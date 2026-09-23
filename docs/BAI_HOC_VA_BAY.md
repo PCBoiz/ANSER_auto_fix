@@ -74,7 +74,7 @@
 
 ## 5. Cách kiểm chứng lại
 
-**Hằng ngày trước khi push:** `npm run check` (typecheck → lint → 212 test → build → quét bundle).
+**Hằng ngày trước khi push:** `npm run check` (typecheck → lint → 219 test → build → quét bundle).
 Không cần DB.
 
 **Test chỉ cho module thuần** (`src/lib/`, và các hàm tách khỏi chỗ chạm DB). Muốn test được thì

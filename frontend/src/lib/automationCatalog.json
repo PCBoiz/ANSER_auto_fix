@@ -1,0 +1,353 @@
+{
+  "_ghi_chu": "Bản kiểm kê MỌI quy trình tự động của ANSER Auto. Đây là NGUỒN DUY NHẤT: docs/TONG_HOP_TU_DONG_HOA.md được sinh ra từ file này (npm run docs:automation), và test khoá hai chiều — thêm quy tắc/workflow/việc theo lịch mà quên ghi vào đây thì test đỏ, sửa file này mà quên sinh lại tài liệu cũng đỏ.",
+  "groups": {
+    "rule": "Quy tắc nghiệp vụ — n8n gửi email ra ngoài",
+    "loop": "Vòng lặp vận hành — app tự phát hiện, tự sửa, tự đóng",
+    "guard": "Chốt chặn — ngăn sai sót ngay lúc thao tác",
+    "infra": "Hạ tầng & quy trình làm việc"
+  },
+  "entries": [
+    {
+      "id": "low_stock_alert",
+      "name": "Cảnh báo phụ tùng sắp hết",
+      "group": "rule",
+      "ruleType": "low_stock_alert",
+      "workflow": "low_stock_alert.json",
+      "trigger": "n8n, mỗi 6 giờ",
+      "does": "Lấy danh sách chi nhánh rồi hỏi từng kho phụ tùng dưới ngưỡng; gửi email tới đúng email cảnh báo của chi nhánh đó.",
+      "closes": "Ngưỡng đọc từ app mỗi lần chạy; đặt ngưỡng 0 cho vật tư đặt theo xe là tắt cảnh báo cho mã đó.",
+      "where": "api/n8n/internal/low-stock, store/parts.ts",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "maintenance_reminder",
+      "name": "Nhắc bảo dưỡng định kỳ",
+      "group": "rule",
+      "ruleType": "maintenance_reminder",
+      "workflow": "maintenance_reminder.json",
+      "trigger": "n8n, 8h hằng ngày",
+      "does": "Tìm xe tới hạn theo ngày hoặc theo km; gửi thư cho TỪNG KHÁCH và một bản tổng hợp cho gara.",
+      "closes": "Đóng lệnh sửa chữa sẽ dời mốc bảo dưỡng kế tiếp của xe, nên xe đã vào xưởng không bị nhắc lại.",
+      "where": "api/n8n/internal/due-for-service",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "appointment_reminder",
+      "name": "Nhắc lịch hẹn",
+      "group": "rule",
+      "ruleType": "appointment_reminder",
+      "workflow": "appointment_reminder.json",
+      "trigger": "n8n, 17h hằng ngày",
+      "does": "Nhắc KHÁCH có lịch hẹn trong 24 giờ tới, kèm bảng phân công cho lễ tân.",
+      "closes": "Lịch hẹn đã huỷ hoặc đã tới thì không nằm trong danh sách lần sau.",
+      "where": "api/n8n/internal/appointments",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "awaiting_acceptance_reminder",
+      "name": "Nhắc chờ nghiệm thu quá hạn",
+      "group": "rule",
+      "ruleType": "awaiting_acceptance_reminder",
+      "workflow": "awaiting_acceptance_reminder.json",
+      "trigger": "n8n, 9h hằng ngày",
+      "does": "Xe sửa xong mà khách chưa tới nhận quá N ngày: nhắc KHÁCH, kèm tổng hợp cho gara.",
+      "closes": "Giao xe (đổi trạng thái) là hết nhắc.",
+      "where": "api/n8n/internal/awaiting-acceptance",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "unpaid_invoice_report",
+      "name": "Báo cáo công nợ",
+      "group": "rule",
+      "ruleType": "unpaid_invoice_report",
+      "workflow": "unpaid_invoice_report.json",
+      "trigger": "n8n, 9h hằng ngày",
+      "does": "Hoá đơn chưa thu đủ quá hạn — CHỈ gửi nội bộ, không gửi khách.",
+      "closes": "Ghi nhận thanh toán đủ là ra khỏi danh sách.",
+      "where": "api/n8n/internal/unpaid-invoices",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "revenue_report",
+      "name": "Báo cáo doanh thu ngày",
+      "group": "rule",
+      "ruleType": "revenue_report",
+      "workflow": "revenue_report.json",
+      "trigger": "n8n, 20h hằng ngày",
+      "does": "Doanh thu trong ngày (nhân bản workflow và đổi period=week|month nếu cần bản tuần/tháng).",
+      "closes": "—",
+      "where": "api/n8n/internal/revenue",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "order_status_update",
+      "name": "Báo tiến độ sửa chữa cho khách",
+      "group": "rule",
+      "ruleType": "order_status_update",
+      "workflow": "order_status_update.json",
+      "trigger": "App gọi webhook ngay khi lệnh đổi trạng thái",
+      "does": "Chỉ báo ở 3 mốc khách thật sự quan tâm: đã báo giá, mời tới nghiệm thu, đã giao xe. Khách không có email thì bỏ qua.",
+      "closes": "—",
+      "where": "server/n8n.ts — notifyOrderStatusChanged",
+      "env": ["N8N_WEBHOOK_URL"]
+    },
+    {
+      "id": "morning_brief",
+      "name": "Bản tin sáng cho quản lý xưởng",
+      "group": "rule",
+      "ruleType": "morning_brief",
+      "workflow": "morning_brief.json",
+      "trigger": "n8n 7h hằng ngày (email) + lịch nội bộ từ 7h (chuông)",
+      "does": "MỘT bản tin gộp: xe quá hẹn trả, xe chờ nghiệm thu, đặt hàng ngoài về trễ, lịch hẹn, phụ tùng sắp hết, công nợ.",
+      "closes": "Mục của bản tin cũ bị bản mới thay (superseded) nên chuông không tích tụ con số cũ.",
+      "where": "automation/digests.ts — buildMorningBrief",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "accounting_digest",
+      "name": "Tổng hợp tuần cho kế toán",
+      "group": "rule",
+      "ruleType": "accounting_digest",
+      "workflow": "accounting_digest.json",
+      "trigger": "n8n 8h thứ Hai (email) + lịch nội bộ từ 8h thứ Hai (chuông)",
+      "does": "Hoá đơn mua chưa nhận theo nhà cung cấp, hàng đã giao chưa lập hoá đơn, khách bị ghi nhiều tên.",
+      "closes": "Như bản tin sáng: bản mới thay bản cũ.",
+      "where": "automation/digests.ts — buildAccountingDigest",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "owner_weekly_report",
+      "name": "Báo cáo tuần cho chủ gara",
+      "group": "rule",
+      "ruleType": "owner_weekly_report",
+      "workflow": "owner_weekly_report.json",
+      "trigger": "n8n 8h thứ Hai (email) + lịch nội bộ từ 8h thứ Hai (chuông)",
+      "does": "App có thật sự được dùng không: lệnh, xe giao, doanh thu so tuần trước; ai đăng nhập, ai chưa từng; thất thoát đang mở; vòng tự động tuần qua. LUÔN gửi, kể cả tuần 0 lệnh.",
+      "closes": "—",
+      "where": "automation/digests.ts — buildOwnerWeekly",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "watchdog",
+      "name": "Bộ canh gác trong app",
+      "group": "loop",
+      "cronJob": "watchdog",
+      "trigger": "Lịch nội bộ mỗi 30 phút (tự host) hoặc Vercel Cron mỗi sáng; nút “Kiểm tra lại ngay”",
+      "does": "Một lượt gồm: dò quy tắc im quá nhịp, kiểm tra sao lưu, đồng bộ n8n, đối soát mọi sự cố, gửi email báo nhanh, gửi nhịp ra ngoài.",
+      "closes": "Đối soát: sự cố nào lần đo này không còn thì ĐÓNG (resolution = verified). Lượt đo lỗi giữa chừng thì không đối soát, để không đóng nhầm.",
+      "where": "automation/watchdog.ts",
+      "incidentKeys": ["watchdog:rule:<loại>", "watchdog:n8n:*", "watchdog:backup:*"],
+      "env": ["INTERNAL_SCHEDULER", "CRON_SECRET"]
+    },
+    {
+      "id": "readiness",
+      "name": "Kiểm tra sẵn sàng vận hành",
+      "group": "loop",
+      "cronJob": "readiness",
+      "trigger": "Mỗi lượt canh gác; và ngay khi mở trang Kiểm tra vận hành",
+      "does": "Đo thẳng từ DB 12+ mục chặn go-live và cảnh báo (mật khẩu đã lộ, dữ liệu mẫu, giá bán, thông tin doanh nghiệp, sao lưu, canh gác ngoài…). Mục mức chặn lên chuông.",
+      "closes": "Sửa xong, lần đo sau không còn thấy thì mục biến mất và sự cố tự đóng.",
+      "where": "server/readiness.ts",
+      "incidentKeys": ["readiness:<mã mục>"],
+      "env": []
+    },
+    {
+      "id": "n8n_sync",
+      "name": "Tự đồng bộ workflow lên n8n",
+      "group": "loop",
+      "trigger": "Mỗi lượt canh gác (chế độ tự động) và nút “Đồng bộ workflow” (người bấm)",
+      "does": "Đẩy 12 mẫu trong git lên n8n: điền token, địa chỉ app, credential SMTP, email cảnh báo; so vân tay nội dung để biết workflow đã bị sửa tay.",
+      "closes": "Tự làm việc an toàn (tạo cái thiếu, gán SMTP, tắt theo app). KHÔNG tự đè bản sửa tay và KHÔNG tự bật workflow gửi khách — hai việc đó chờ người bấm.",
+      "where": "automation/n8nSync.ts, lib/n8nTemplates.ts",
+      "incidentKeys": ["watchdog:n8n:drift", "watchdog:n8n:inactive", "watchdog:n8n:no-smtp", "watchdog:n8n:sync-error"],
+      "env": ["N8N_API_URL", "N8N_API_KEY", "N8N_INTERNAL_TOKEN", "APP_URL_FOR_N8N"]
+    },
+    {
+      "id": "app_watchdog",
+      "name": "n8n canh app (canh gác hai chiều)",
+      "group": "loop",
+      "workflow": "app_watchdog.json",
+      "trigger": "n8n, mỗi 30 phút",
+      "does": "Hỏi /api/health. App chết hoặc vòng tự động hỏng thì email ngay, nhắc lại mỗi 3 giờ; app sống lại thì email “đã hoạt động lại” kèm thời gian gián đoạn.",
+      "closes": "Chống trùng bằng static data của workflow; báo hồi phục đúng một lần.",
+      "where": "n8n-workflows/app_watchdog.json, api/health",
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "n8n_watchdog_seen",
+      "name": "App canh lại người canh gác",
+      "group": "loop",
+      "trigger": "Mỗi lần n8n hỏi /api/health theo lịch",
+      "does": "Ghi mốc n8n vừa hỏi. Im quá 2 giờ (lỡ 4 lần) thì mở sự cố mức cao: n8n còn sống nhưng workflow canh gác đã tắt.",
+      "closes": "n8n hỏi lại là đóng.",
+      "where": "api/health, automation/watchdog.ts",
+      "incidentKeys": ["watchdog:n8n:app-watchdog-silent"],
+      "env": ["N8N_INTERNAL_TOKEN"]
+    },
+    {
+      "id": "incident_alert",
+      "name": "Email báo nhanh sự cố",
+      "group": "loop",
+      "workflow": "incident_alert.json",
+      "trigger": "Cuối mỗi lượt canh gác",
+      "does": "Gom sự cố MỨC CAO mới mở và sự cố đã báo nay đã đóng thành MỘT email. Workflow tự kiểm token và chỉ trả 200 sau khi email đã gửi xong.",
+      "closes": "Chỉ đánh dấu “đã báo” khi n8n xác nhận gửi xong; gửi lỗi thì lượt sau gửi lại. Tái phát thì báo lại.",
+      "where": "server/incidentAlerts.ts, lib/incidentAlerts.ts",
+      "env": ["N8N_WEBHOOK_URL", "N8N_INTERNAL_TOKEN", "APP_PUBLIC_URL"]
+    },
+    {
+      "id": "external_heartbeat",
+      "name": "Canh gác từ bên ngoài (dead man's switch)",
+      "group": "loop",
+      "trigger": "Cuối mỗi lượt canh gác theo lịch",
+      "does": "Gửi nhịp tới healthchecks.io: khoẻ thì ping URL gốc, hỏng thì ping /fail. Máy chủ mất điện/mất mạng thì nhịp ngừng và chính dịch vụ đó email cho chủ gara.",
+      "closes": "Đây là lớp cuối: không đi qua n8n, nên n8n hay app chết đều không làm nó câm.",
+      "where": "automation/watchdog.ts — pingHeartbeat",
+      "env": ["HEARTBEAT_URL"]
+    },
+    {
+      "id": "backup",
+      "name": "Sao lưu tự động",
+      "group": "loop",
+      "cronJob": "backup",
+      "trigger": "Lịch nội bộ, mỗi ngày từ 2h sáng",
+      "does": "Kết xuất 19 bảng ra JSON, ĐỌC LẠI đối chiếu số dòng, chép sang thư mục đồng bộ (Google Drive/OneDrive) rồi so sha256, giữ 14 bản mới nhất.",
+      "closes": "Lỗi sao lưu hoặc quá 36 giờ không có bản mới thì mở sự cố; lần sau thành công là đóng.",
+      "where": "server/backup.ts, lib/backupPolicy.ts",
+      "incidentKeys": ["watchdog:backup:failed", "watchdog:backup:stale", "watchdog:backup:copy-failed"],
+      "env": ["BACKUP_DIR", "BACKUP_COPY_DIR", "BACKUP_KEEP"]
+    },
+    {
+      "id": "revenue_guard",
+      "name": "Chặn thất thoát doanh thu",
+      "group": "loop",
+      "trigger": "Ngay sau mỗi lần sửa lệnh/hoá đơn (after()) + mỗi lượt canh gác",
+      "does": "Dò dòng 0đ, dòng bán dưới giá vốn, giảm giá lớn chưa duyệt, xe đã giao quá 24 giờ chưa lập hoá đơn.",
+      "closes": "Sửa giá, bỏ dòng, quản lý duyệt hoặc lập hoá đơn thì sự cố tự đóng.",
+      "where": "lib/revenueGuard.ts, server/revenueGuard.ts",
+      "incidentKeys": ["revenue:order:<id>:zero", "revenue:order:<id>:below-cost", "revenue:order:<id>:discount", "revenue:order:<id>:not-invoiced"],
+      "env": []
+    },
+    {
+      "id": "usage_monitor",
+      "name": "Theo dõi mức sử dụng",
+      "group": "loop",
+      "trigger": "Mỗi lượt canh gác",
+      "does": "Báo khi N ngày làm việc liền (mặc định 2, bỏ Chủ nhật) không có lệnh sửa chữa mới. Chỉ canh sau khi đã có lệnh đầu tiên.",
+      "closes": "Có lệnh mới là đóng.",
+      "where": "lib/usage.ts",
+      "incidentKeys": ["usage:no-orders"],
+      "env": []
+    },
+    {
+      "id": "notification_prune",
+      "name": "Dọn thông báo cũ",
+      "group": "loop",
+      "trigger": "Cuối mỗi lượt chạy lịch",
+      "does": "Xoá thông báo cũ hơn 30 ngày, nhưng KHÔNG BAO GIỜ xoá sự cố đang mở (readiness, watchdog, revenue, usage).",
+      "closes": "—",
+      "where": "store/notifications.ts — pruneNotifications",
+      "env": []
+    },
+    {
+      "id": "internal_scheduler",
+      "name": "Lịch chạy trong app",
+      "group": "infra",
+      "trigger": "Tiến trình app, kiểm tra mỗi 5 phút",
+      "does": "Chạy canh gác (30 phút), sao lưu (2h), bản tin sáng (7h), tổng hợp kế toán + báo cáo tuần (8h thứ Hai). Có BẮT KỊP: máy tắt buổi sáng, bật lại vẫn chạy bản tin hôm đó.",
+      "closes": "Giành khe trong DB nên hai tiến trình không chạy trùng một khe.",
+      "where": "automation/scheduler.ts, store/systemState.ts",
+      "env": ["INTERNAL_SCHEDULER"]
+    },
+    {
+      "id": "vercel_cron",
+      "name": "Lịch của Vercel",
+      "group": "infra",
+      "trigger": "0h UTC hằng ngày (7h VN) và 1h UTC thứ Hai (8h VN)",
+      "does": "Gọi /api/cron/automation cho bản deploy serverless, nơi tiến trình không sống liên tục.",
+      "closes": "—",
+      "where": "vercel.json, api/cron/automation",
+      "env": ["CRON_SECRET"]
+    },
+    {
+      "id": "zero_price_confirm",
+      "name": "Xác nhận khi lập hoá đơn còn dòng 0đ",
+      "group": "guard",
+      "trigger": "Lúc bấm xuất hoá đơn",
+      "does": "Trả 409 kèm danh sách dòng 0đ; giao diện hỏi lại rồi mới gửi kèm xác nhận. Hoá đơn là chỗ chốt tiền nên chỉ chặn ở đây.",
+      "closes": "—",
+      "where": "store/invoices.ts — ZeroPriceLinesError",
+      "env": []
+    },
+    {
+      "id": "discount_approval",
+      "name": "Duyệt giảm giá lớn",
+      "group": "guard",
+      "trigger": "Khi giảm giá ≥10% và ≥500.000đ",
+      "does": "Nhân viên đặt thì chờ quản lý bấm Duyệt; quản lý tự đặt thì coi như đã duyệt. Lưu SỐ TIỀN đã duyệt nên sửa mức giảm là phải duyệt lại.",
+      "closes": "Duyệt đúng mức hiện tại thì sự cố đóng.",
+      "where": "api/service-orders/[id], lib/revenueGuard.ts",
+      "env": []
+    },
+    {
+      "id": "login_throttle",
+      "name": "Chặn dò mật khẩu",
+      "group": "guard",
+      "trigger": "Mỗi lần đăng nhập",
+      "does": "5 lần sai/email và 20 lần sai/IP trong 15 phút thì khoá tạm. Đếm trong DB nên đúng cả khi chạy nhiều tiến trình.",
+      "closes": "Đăng nhập đúng là xoá bộ đếm.",
+      "where": "server/loginThrottle.ts",
+      "env": []
+    },
+    {
+      "id": "rate_limits",
+      "name": "Giới hạn thao tác nặng",
+      "group": "guard",
+      "trigger": "Import Excel, nhập giá hàng loạt, chạy tay bản tin, đồng bộ n8n",
+      "does": "Đếm theo tài khoản (không theo IP — cả gara chung một router) để một script lỗi không ép server parse 5 MB liên tục.",
+      "closes": "—",
+      "where": "server/rateLimit.ts",
+      "env": []
+    },
+    {
+      "id": "seed_bootstrap",
+      "name": "Khởi tạo lúc server bật",
+      "group": "infra",
+      "trigger": "Mỗi lần khởi động",
+      "does": "Tạo chi nhánh mặc định, quy tắc tự động còn thiếu, dòng cài đặt doanh nghiệp, và quản trị viên đầu tiên nếu khai báo env. Dữ liệu MINH HOẠ chỉ tạo khi SEED_DEMO_DATA=true.",
+      "closes": "Idempotent: chạy lại nhiều lần không sinh trùng.",
+      "where": "instrumentation.ts, store/seed.ts",
+      "env": ["SEED_DEMO_DATA", "BOOTSTRAP_ADMIN_EMAIL", "BOOTSTRAP_ADMIN_PASSWORD"]
+    },
+    {
+      "id": "docker_selfheal",
+      "name": "Docker tự dựng lại app",
+      "group": "infra",
+      "trigger": "Khi tiến trình app chết",
+      "does": "restart: unless-stopped + HEALTHCHECK gọi /api/health?live=1 (không chạm DB, để Neon ngủ đông không bị coi là app hỏng).",
+      "closes": "App chết trong thời gian dài vẫn bị n8n và healthchecks.io báo.",
+      "where": "docker-compose.yml, Dockerfile",
+      "env": []
+    },
+    {
+      "id": "check_pipeline",
+      "name": "Chuỗi kiểm tra trước khi push",
+      "group": "infra",
+      "trigger": "npm run check, và git hook pre-push sau khi cài npm run hooks:install",
+      "does": "typecheck → lint → 219 test → build → quét bundle client xem 3 mật khẩu đã lộ có quay lại không.",
+      "closes": "Hook chặn push khi đỏ — thay cho CI GitHub đang bị khoá vì vấn đề thanh toán của tài khoản.",
+      "where": "package.json, scripts/install-git-hooks.mjs, .github/workflows/ci.yml",
+      "env": []
+    },
+    {
+      "id": "doc_sync",
+      "name": "Tài liệu tự sinh từ mã",
+      "group": "infra",
+      "trigger": "npm run docs:automation; test chạy mỗi lần npm test",
+      "does": "Sinh phần kiểm kê trong docs/TONG_HOP_TU_DONG_HOA.md từ file này.",
+      "closes": "Test đỏ nếu tài liệu lệch mã, hoặc mã có quy tắc/workflow/việc theo lịch chưa được ghi vào kiểm kê.",
+      "where": "scripts/gen-automation-doc.ts, lib/automationDoc.ts",
+      "env": []
+    }
+  ]
+}

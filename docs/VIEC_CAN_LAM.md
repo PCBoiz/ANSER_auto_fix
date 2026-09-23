@@ -165,7 +165,9 @@ Chọn **một** trong hai.
   4. Mở app kiểm tra, rồi trỏ lại.
   - Tuyệt đối **không** chạy `--apply` vào DB đang dùng: lệnh này xoá sạch dữ liệu các bảng trước
     khi chèn lại.
-- [ ] **D3. Mở khoá GitHub Actions trên fork.**
+- [ ] **D3. Cài hook chặn push hỏng + mở khoá GitHub Actions trên fork.**
+  - Chạy một lần trên mỗi máy làm việc: `npm run hooks:install`. Từ đó `git push` tự chạy
+    `npm run check` trước, đỏ thì không push (bỏ qua khi thật cần: `git push --no-verify`).
   - CI trên `PCBoiz/ANSER_auto_fix` đang đỏ **không phải do code**. GitHub báo *"The job was not
     started because your account is locked due to a billing issue"*, nên job không chạy bước nào.
   - Xử lý ở GitHub → Settings → Billing.

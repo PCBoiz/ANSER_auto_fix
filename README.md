@@ -13,6 +13,7 @@ ANSER_methuy/
 ├── ARCHITECTURE.md      Kiến trúc, mô hình dữ liệu, các quyết định thiết kế
 ├── STACK_DECISIONS.md   Vì sao chọn stack này, hướng tách AI/n8n
 ├── docs/
+│   ├── TONG_HOP_TU_DONG_HOA.md  Một file gửi cho người khác: TOÀN BỘ quy trình tự động
 │   ├── VIEC_CAN_LAM.md       ← BẮT ĐẦU Ở ĐÂY: việc người vận hành cần làm, theo thứ tự
 │   ├── VAN_HANH_VONG_LAP.md  Sổ tay: mỗi sự cố/email cảnh báo nghĩa là gì, làm gì
 │   ├── NHAT_KY_CAI_TIEN.md   Đã làm gì, vì sao, ở commit nào
@@ -75,8 +76,10 @@ Công cụ dữ liệu (`cd frontend`):
 | `npm run data:clean-demo -- --apply` | Xoá dữ liệu mẫu (7 phụ tùng, 8 dịch vụ, nhân sự "(test)"); từ chối xoá thứ đã có giao dịch |
 | `npm run data:name-prices` | Tách giá nhập nằm trong tên phụ tùng ("Kính chắn gió G1.400") — xem trước, `-- --apply-cost` / `-- --apply-rename` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | 212 test vitest cho module thuần — không cần DB |
+| `npm test` | 219 test vitest cho module thuần — không cần DB |
 | `npm run check` | Đúng chuỗi CI: typecheck → lint → test → build → quét bundle. Chạy trước khi push. |
+| `npm run hooks:install` | Cài git hook `pre-push` tự chạy `npm run check` (thay CI đang bị khoá) |
+| `npm run docs:automation` | Sinh lại bảng kiểm kê trong `docs/TONG_HOP_TU_DONG_HOA.md` từ mã |
 
 > **Dấu `--` ở giữa là bắt buộc** với các cờ `--apply…`: `npm run data:clean-demo --apply` bị npm nuốt mất
 > cờ mà không báo gì, script chỉ chạy xem trước (đã thử trên npm 11). Script in rõ "CHƯA XOÁ GÌ" khi đó.

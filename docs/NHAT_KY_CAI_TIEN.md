@@ -117,6 +117,22 @@ commit; 12 mẫu n8n đều còn placeholder; mọi email dựng qua `escapeHtml
 ghi thử, sequence nguyên (RO=2, HD=1), `npm run db:migrate` không còn gì để áp; `npm audit` mức
 high sạch. 212 test.
 
+## Đợt 7 — 24/09/2026: học Graphify, thêm 3 thứ, test lại toàn bộ
+
+Đọc https://github.com/Graphify-Labs/graphify (công cụ dựng đồ thị tri thức từ mã nguồn). Không
+áp dụng phần đồ thị — dự án này là app nghiệp vụ, không phải kho tri thức. Mượn **ba ý về quy
+trình**:
+
+| Ý của Graphify | Áp vào đây |
+|---|---|
+| `graphify hook install` — việc gì phải chạy mỗi lần đổi mã thì gắn vào git | `npm run hooks:install` cài hook `pre-push` chạy `npm run check`. Lấp đúng lỗ hổng: CI trên fork không chạy vì tài khoản bị khoá thanh toán. Đã thử: cố tình làm đỏ typecheck → hook chặn, mã thoát 1 |
+| `GRAPH_REPORT.md` sinh từ nguồn, không chép tay | `docs/TONG_HOP_TU_DONG_HOA.md` — phần kiểm kê sinh từ `lib/automationCatalog.json` bằng `npm run docs:automation` |
+| CI kiểm tra schema của bản sinh | Test khoá **ba chiều**: mã ↔ kiểm kê ↔ tài liệu. Thêm quy tắc/workflow/việc theo lịch mà quên ghi vào kiểm kê → đỏ; sửa kiểm kê mà quên sinh lại tài liệu → đỏ; biến môi trường ghi trong kiểm kê mà mã không đọc → đỏ |
+
+Test lại toàn bộ: `npm run check` xanh (219 test), `docker compose config` hợp lệ, 12 workflow
+n8n đúng đồ thị, health/canh gác/báo cáo tuần/sao lưu chạy đúng trên dev server thật, DB thật
+không sót bản ghi thử. Bản kiểm kê đếm được **31 quy trình tự động** đang có.
+
 ---
 
 ## Số liệu đã đo trên dữ liệu thật (đừng đo lại từ đầu)
@@ -135,7 +151,7 @@ high sạch. 212 test.
 
 ## Trạng thái cuối (20/09/2026)
 
-- **212 test** (20/09), `npm run check` sạch. CI trên fork đỏ vì tài khoản GitHub bị khoá thanh toán,
+- **219 test** (24/09), `npm run check` sạch. CI trên fork đỏ vì tài khoản GitHub bị khoá thanh toán,
   không phải do code.
 - **Migration 0000–0011 đã áp vào DB thật.**
 - **Kiểm tra vận hành:** 5 việc chặn + 7 cảnh báo, đều là việc của người vận hành (xem
